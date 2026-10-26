@@ -100,7 +100,7 @@ echo -e "${CUSTOM_IDX}) \033[1mCustom model name\033[0m (enter manually)"
 # Primary Model Selection
 DEFAULT_PRIMARY_IDX=1
 for i in "${!MODEL_NAMES[@]}"; do
-    if [[ "${MODEL_NAMES[$i]}" == *"gemma-2-27b"* ]] || [[ "${MODEL_NAMES[$i]}" == *"gemini-2.0-flash"* ]]; then
+    if [[ "${MODEL_NAMES[$i]}" == *"gemma-4-26b"* ]] || [[ "${MODEL_NAMES[$i]}" == *"gemma-4"* ]]; then
         DEFAULT_PRIMARY_IDX=$((i + 1))
         break
     fi

@@ -13,11 +13,14 @@ with warnings.catch_warnings():
     import google.generativeai as genai
 
 FALLBACK_MODELS = [
+    {"name": "gemma-4-26b-it", "description": "Gemma 4 26B instruction-tuned model (Default)"},
+    {"name": "gemma-4-26b", "description": "Gemma 4 26B base model"},
+    {"name": "gemma-4-9b-it", "description": "Gemma 4 9B instruction-tuned model"},
     {"name": "gemma-2-27b-it", "description": "Gemma 2 27B instruction-tuned open weights model"},
     {"name": "gemma-2-9b-it", "description": "Gemma 2 9B instruction-tuned model"},
     {"name": "gemini-2.0-flash", "description": "Next-generation ultra-fast multimodal model"},
     {"name": "gemini-2.0-flash-lite", "description": "Ultra-lightweight fast Gemini 2.0 model"},
-    {"name": "gemini-1.5-flash", "description": "Fast and versatile performance across a variety of tasks"},
+    {"name": "gemini-1.5-flash", "description": "Fast and versatile performance across a variety of tasks (Recommended Backup)"},
     {"name": "gemini-1.5-flash-8b", "description": "High-volume, lower-cost fast model"},
     {"name": "gemini-1.5-pro", "description": "Complex reasoning tasks, coding, and deep understanding"},
 ]
@@ -31,19 +34,27 @@ def fetch_models(api_key: str) -> List[Dict[str, str]]:
         genai.configure(api_key=api_key)
         all_models = genai.list_models()
         valid_models = []
+        model_names_seen = set()
+
+        # Always include Gemma 4 models at the top
+        for gm in FALLBACK_MODELS:
+            if "gemma-4" in gm["name"]:
+                valid_models.append(gm)
+                model_names_seen.add(gm["name"])
+
         for m in all_models:
             # Filter models that support content generation
             methods = getattr(m, "supported_generation_methods", [])
             if "generateContent" in methods:
-                # Strip models/ prefix if present
                 clean_name = m.name.replace("models/", "")
-                desc = getattr(m, "display_name", "") or getattr(m, "description", "")
-                valid_models.append({"name": clean_name, "description": desc[:70] if desc else clean_name})
+                if clean_name not in model_names_seen:
+                    desc = getattr(m, "display_name", "") or getattr(m, "description", "")
+                    valid_models.append({"name": clean_name, "description": desc[:70] if desc else clean_name})
+                    model_names_seen.add(clean_name)
 
         if valid_models:
             return valid_models
-    except Exception as e:
-        # If API call fails or key is invalid, fall back to the curated list
+    except Exception:
         pass
 
     return FALLBACK_MODELS
