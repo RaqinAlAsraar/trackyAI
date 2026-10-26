@@ -75,45 +75,71 @@ while [ -z "$GEMINI_KEY" ]; do
     read -rp "Enter your Gemini API Key: " GEMINI_KEY
 done
 
-# Primary Model Selection
-echo -e "\n${YELLOW}Select Primary LLM Model:${NC}"
-echo "1) gemma-2-27b-it (Recommended Open Weights)"
-echo "2) gemini-2.0-flash (Ultra fast, state-of-the-art multimodal)"
-echo "3) gemini-1.5-flash (Fast & lightweight)"
-echo "4) gemini-1.5-pro (Deep reasoning)"
-echo "5) Custom model name"
-read -rp "Select primary model [1-5] (default: 2): " MODEL_CHOICE
-MODEL_CHOICE=${MODEL_CHOICE:-2}
+# Fetch and List All Available Models
+echo -e "\n${BLUE}Querying available models from Google AI Studio API...${NC}"
+AVAILABLE_MODELS_RAW=$(.venv/bin/python3 scripts/list_models.py "$GEMINI_KEY" --json 2>/dev/null || .venv/bin/python3 scripts/list_models.py "" --json)
 
-case $MODEL_CHOICE in
-    1) PRIMARY_MODEL="gemma-2-27b-it" ;;
-    2) PRIMARY_MODEL="gemini-2.0-flash" ;;
-    3) PRIMARY_MODEL="gemini-1.5-flash" ;;
-    4) PRIMARY_MODEL="gemini-1.5-pro" ;;
-    5)
-        read -rp "Enter custom primary model name: " PRIMARY_MODEL
-        ;;
-    *) PRIMARY_MODEL="gemini-2.0-flash" ;;
-esac
+MODEL_NAMES=($(.venv/bin/python3 -c "
+import json, sys
+data = json.loads('''$AVAILABLE_MODELS_RAW''')
+print(' '.join(m['name'] for m in data))
+"))
+
+TOTAL_MODELS=${#MODEL_NAMES[@]}
+
+echo -e "\n${BOLD}${CYAN}--- Available Google Models ---${NC}"
+.venv/bin/python3 -c "
+import json
+data = json.loads('''$AVAILABLE_MODELS_RAW''')
+for idx, m in enumerate(data, 1):
+    print(f\"{idx}) \033[1m{m['name']}\033[0m - {m['description']}\")
+"
+CUSTOM_IDX=$((TOTAL_MODELS + 1))
+echo -e "${CUSTOM_IDX}) \033[1mCustom model name\033[0m (enter manually)"
+
+# Primary Model Selection
+DEFAULT_PRIMARY_IDX=1
+for i in "${!MODEL_NAMES[@]}"; do
+    if [[ "${MODEL_NAMES[$i]}" == *"gemma-2-27b"* ]] || [[ "${MODEL_NAMES[$i]}" == *"gemini-2.0-flash"* ]]; then
+        DEFAULT_PRIMARY_IDX=$((i + 1))
+        break
+    fi
+done
+
+echo -e "\n${YELLOW}Select Primary LLM Model:${NC}"
+read -rp "Select primary model [1-${CUSTOM_IDX}] (default: ${DEFAULT_PRIMARY_IDX} [${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}]): " MODEL_CHOICE
+MODEL_CHOICE=${MODEL_CHOICE:-$DEFAULT_PRIMARY_IDX}
+
+if [ "$MODEL_CHOICE" -ge 1 ] && [ "$MODEL_CHOICE" -le "$TOTAL_MODELS" ]; then
+    PRIMARY_MODEL="${MODEL_NAMES[$((MODEL_CHOICE - 1))]}"
+elif [ "$MODEL_CHOICE" -eq "$CUSTOM_IDX" ]; then
+    read -rp "Enter custom primary model name: " PRIMARY_MODEL
+else
+    PRIMARY_MODEL="${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}"
+fi
+echo -e "${GREEN}✓ Selected Primary Model: $PRIMARY_MODEL${NC}"
 
 # Backup Model Selection
-echo -e "\n${YELLOW}Select Backup Fallback Model (used automatically if primary hits rate limits or errors):${NC}"
-echo "1) gemini-1.5-flash (Highly recommended as reliable backup)"
-echo "2) gemini-2.0-flash"
-echo "3) gemma-2-27b-it"
-echo "4) Custom model name"
-read -rp "Select backup model [1-4] (default: 1): " BACKUP_CHOICE
-BACKUP_CHOICE=${BACKUP_CHOICE:-1}
+DEFAULT_BACKUP_IDX=1
+for i in "${!MODEL_NAMES[@]}"; do
+    if [[ "${MODEL_NAMES[$i]}" == *"gemini-1.5-flash"* ]]; then
+        DEFAULT_BACKUP_IDX=$((i + 1))
+        break
+    fi
+done
 
-case $BACKUP_CHOICE in
-    1) BACKUP_MODEL="gemini-1.5-flash" ;;
-    2) BACKUP_MODEL="gemini-2.0-flash" ;;
-    3) BACKUP_MODEL="gemma-2-27b-it" ;;
-    4)
-        read -rp "Enter custom backup model name: " BACKUP_MODEL
-        ;;
-    *) BACKUP_MODEL="gemini-1.5-flash" ;;
-esac
+echo -e "\n${YELLOW}Select Backup Fallback Model (used automatically if primary hits rate limits or errors):${NC}"
+read -rp "Select backup model [1-${CUSTOM_IDX}] (default: ${DEFAULT_BACKUP_IDX} [${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}]): " BACKUP_CHOICE
+BACKUP_CHOICE=${BACKUP_CHOICE:-$DEFAULT_BACKUP_IDX}
+
+if [ "$BACKUP_CHOICE" -ge 1 ] && [ "$BACKUP_CHOICE" -le "$TOTAL_MODELS" ]; then
+    BACKUP_MODEL="${MODEL_NAMES[$((BACKUP_CHOICE - 1))]}"
+elif [ "$BACKUP_CHOICE" -eq "$CUSTOM_IDX" ]; then
+    read -rp "Enter custom backup model name: " BACKUP_MODEL
+else
+    BACKUP_MODEL="${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}"
+fi
+echo -e "${GREEN}✓ Selected Backup Fallback Model: $BACKUP_MODEL${NC}"
 
 # Messaging Platform Selection
 echo -e "\n${YELLOW}Which messaging platform(s) do you want to configure?${NC}"
