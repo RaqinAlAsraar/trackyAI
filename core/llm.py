@@ -11,7 +11,17 @@ import json
 import warnings
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-import pytz
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
+
+try:
+    import pytz
+except ImportError:
+    pytz = None
+
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", category=FutureWarning)
     import google.generativeai as genai
@@ -26,10 +36,18 @@ def get_system_instruction(
     user_name: str = "",
     assistant_name: str = "Tracky",
 ) -> str:
+    current_time_str = ""
     try:
-        tz = pytz.timezone(user_timezone)
-        current_time_str = datetime.now(tz).strftime("%A, %Y-%m-%d %H:%M:%S %Z (UTC%z)")
+        if ZoneInfo:
+            tz = ZoneInfo(user_timezone)
+            current_time_str = datetime.now(tz).strftime("%A, %Y-%m-%d %H:%M:%S %Z (UTC%z)")
+        elif pytz:
+            tz = pytz.timezone(user_timezone)
+            current_time_str = datetime.now(tz).strftime("%A, %Y-%m-%d %H:%M:%S %Z (UTC%z)")
     except Exception:
+        pass
+
+    if not current_time_str:
         current_time_str = datetime.utcnow().strftime("%A, %Y-%m-%d %H:%M:%S UTC")
 
     display_user = user_name if user_name else "my user"

@@ -24,3 +24,6 @@ edge-tts>=6.1.12
 # Testing & Utilities
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+pytz>=2024.1
+tzlocal>=5.0
+
