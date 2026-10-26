@@ -9,6 +9,7 @@ Features:
 """
 
 import json
+import time
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -199,6 +200,9 @@ class LLMEngine:
     def __init__(self):
         self.api_key = settings.gemini.api_key
         self.client: Optional[genai.Client] = None
+        self.last_model_used: Optional[str] = None
+        self.last_duration: Optional[float] = None
+        self.last_tools_called: List[str] = []
         if self.api_key:
             self.client = genai.Client(api_key=self.api_key)
             logger.info("Initialized Google GenAI Client.")
@@ -241,6 +245,11 @@ class LLMEngine:
         if not self.client:
             return "Gemini API key is not configured. Please run ./setup.sh to set up your key."
 
+        start_time = time.time()
+        self.last_tools_called = []
+        self.last_model_used = None
+        self.last_duration = None
+
         models_to_try = self._get_models_chain()
         last_error = None
 
@@ -251,6 +260,8 @@ class LLMEngine:
                     self._call_model(model_name, ctx, user_message, history),
                     timeout=12.0,
                 )
+                self.last_model_used = model_name
+                self.last_duration = round(time.time() - start_time, 2)
                 return response_text
             except asyncio.TimeoutError:
                 last_error = f"Model '{model_name}' timed out after 12.0 seconds"
@@ -259,6 +270,7 @@ class LLMEngine:
                 last_error = e
                 logger.warning(f"Model '{model_name}' failed with error: {e}. Switching to fallback...")
 
+        self.last_duration = round(time.time() - start_time, 2)
         logger.error(f"All models failed. Last error: {last_error}")
         return f"I ran into an issue connecting to my AI brain. Error: {last_error}"
 
@@ -312,6 +324,8 @@ class LLMEngine:
             for fn in function_calls:
                 fn_name = fn.name
                 fn_args = dict(fn.args)
+                if fn_name not in self.last_tools_called:
+                    self.last_tools_called.append(fn_name)
                 logger.info(f"Executing LLM tool: {fn_name}({fn_args})")
                 result = await execute_tool_call(ctx, fn_name, fn_args)
                 logger.info(f"Tool {fn_name} returned: {result}")

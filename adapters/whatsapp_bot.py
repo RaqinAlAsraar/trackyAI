@@ -112,7 +112,15 @@ async def receive_twilio_whatsapp(
 
     history = await memory_manager.get_context_history(user_id)
     reply = await llm_engine.generate_response(ctx, user_text, history)
-    await memory_manager.record_interaction(user_id, "whatsapp", user_text, reply)
+    await memory_manager.record_interaction(
+        user_id=user_id,
+        platform="whatsapp",
+        user_text=user_text,
+        assistant_reply=reply,
+        duration=llm_engine.last_duration,
+        model_name=llm_engine.last_model_used,
+        tools_called=llm_engine.last_tools_called,
+    )
 
     # Return reply in Twilio TwiML format
     twiml = f"<Response><Message>{reply}</Message></Response>"

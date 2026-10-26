@@ -21,6 +21,7 @@ class AppConfig(BaseModel):
     port: int = 8000
     timezone: str = "Asia/Kolkata"
     debug: bool = True
+    log_discussions: bool = True
 
 
 class GeminiConfig(BaseModel):
@@ -49,12 +50,20 @@ class MemoryConfig(BaseModel):
     max_history_messages: int = 100
     max_history_hours: int = 48
     memory_log_file: str = "memory.log"
+    log_discussions: bool = True
+    discussion_log_file: str = "logs/discussions.log"
 
     @property
     def absolute_log_path(self) -> str:
         if os.path.isabs(self.memory_log_file):
             return self.memory_log_file
         return os.path.join(BASE_DIR, self.memory_log_file)
+
+    @property
+    def absolute_discussion_log_path(self) -> str:
+        if os.path.isabs(self.discussion_log_file):
+            return self.discussion_log_file
+        return os.path.join(BASE_DIR, self.discussion_log_file)
 
 
 class TelegramConfig(BaseModel):

@@ -77,11 +77,17 @@ async def health_check():
 async def get_logs(lines: int = 100, log_type: str = "tracky"):
     """
     Returns the latest logs for debugging and monitoring.
-    log_type: 'tracky' or 'error'
+    log_type: 'tracky', 'error', or 'discussions'
     """
-    file_path = ERROR_LOG_FILE if log_type == "error" else TRACKY_LOG_FILE
+    if log_type == "discussions":
+        file_path = settings.memory.absolute_discussion_log_path
+    elif log_type == "error":
+        file_path = ERROR_LOG_FILE
+    else:
+        file_path = TRACKY_LOG_FILE
+
     if not os.path.exists(file_path):
-        return "No log entries yet."
+        return f"No log entries yet for '{log_type}'."
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             all_lines = f.readlines()

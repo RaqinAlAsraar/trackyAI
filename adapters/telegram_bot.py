@@ -187,7 +187,15 @@ class TelegramAdapter(BaseMessenger):
         history = await memory_manager.get_context_history(user_id)
         reply = await llm_engine.generate_response(ctx, user_text, history)
 
-        await memory_manager.record_interaction(user_id, "telegram", user_text, reply)
+        await memory_manager.record_interaction(
+            user_id=user_id,
+            platform="telegram",
+            user_text=user_text,
+            assistant_reply=reply,
+            duration=llm_engine.last_duration,
+            model_name=llm_engine.last_model_used,
+            tools_called=llm_engine.last_tools_called,
+        )
         try:
             await update.message.reply_text(reply, parse_mode="Markdown")
         except Exception:
@@ -236,7 +244,15 @@ class TelegramAdapter(BaseMessenger):
 
             history = await memory_manager.get_context_history(user_id)
             reply = await llm_engine.generate_response(ctx, f"[Voice message]: {transcribed_text}", history)
-            await memory_manager.record_interaction(user_id, "telegram", f"[Voice]: {transcribed_text}", reply)
+            await memory_manager.record_interaction(
+                user_id=user_id,
+                platform="telegram",
+                user_text=f"[Voice]: {transcribed_text}",
+                assistant_reply=reply,
+                duration=llm_engine.last_duration,
+                model_name=llm_engine.last_model_used,
+                tools_called=llm_engine.last_tools_called,
+            )
 
             # Send text reply (with markdown fallback)
             voice_caption = f"🎙️ *Heard*: \"{transcribed_text}\"\n\n{reply}"
