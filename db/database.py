@@ -254,18 +254,38 @@ async def add_reminder(
 
 
 async def get_due_reminders(target_iso: str) -> List[Dict[str, Any]]:
-    """Returns pending reminders scheduled on or before target_iso."""
+    """Returns pending reminders scheduled on or before target_iso, accounting for timezones."""
     async with get_db() as db:
         cursor = await db.execute(
             """
             SELECT * FROM reminders
-            WHERE status = 'pending' AND remind_at <= ?
+            WHERE status = 'pending'
             ORDER BY remind_at ASC
-            """,
-            (target_iso,),
+            """
         )
         rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
+        try:
+            target_dt = datetime.fromisoformat(target_iso.replace("Z", "+00:00"))
+            if target_dt.tzinfo is None:
+                target_dt = target_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            target_dt = datetime.now(timezone.utc)
+
+        due_list = []
+        for row in rows:
+            r = dict(row)
+            remind_str = r.get("remind_at", "")
+            try:
+                dt = datetime.fromisoformat(remind_str.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt <= target_dt:
+                    due_list.append(r)
+            except Exception:
+                # If parsing fails, fall back to string comparison
+                if remind_str <= target_iso:
+                    due_list.append(r)
+        return due_list
 
 
 async def get_active_reminders(user_id: str) -> List[Dict[str, Any]]:

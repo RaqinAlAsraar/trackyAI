@@ -7,12 +7,10 @@ Voice module for Tracky AI:
 import os
 import tempfile
 import asyncio
-import warnings
 from typing import Optional
 import edge_tts
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
-    import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from core.logger import logger
 from core.config import settings
@@ -39,15 +37,20 @@ class VoiceProcessor:
 
         try:
             logger.info(f"Transcribing audio file {audio_file_path} via Gemini...")
-            # Upload file to Gemini File API or send directly as Part
-            audio_file = genai.upload_file(path=audio_file_path, mime_type=mime_type)
+            client = genai.Client(api_key=settings.gemini.api_key)
+            with open(audio_file_path, "rb") as f:
+                audio_bytes = f.read()
 
-            model = genai.GenerativeModel(model_name="gemini-2.0-flash")
-            prompt = (
-                "Please accurately transcribe all spoken words from this audio clip verbatim. "
-                "Output ONLY the transcribed text without commentary or quotation marks."
+            response = await client.aio.models.generate_content(
+                model="models/gemini-3-flash-preview",
+                contents=[
+                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                    "Please accurately transcribe all spoken words from this audio clip verbatim. Output ONLY the transcribed text without commentary or quotation marks.",
+                ],
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
             )
-            response = await model.generate_content_async([prompt, audio_file])
             transcription = response.text.strip() if response.text else ""
             logger.info(f"Audio transcribed successfully: '{transcription}'")
             return transcription

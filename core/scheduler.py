@@ -11,6 +11,7 @@ from typing import Callable, Dict, Any, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from core.logger import logger
+from core.config import settings
 import db.database as db
 
 # Callback registry for outbound message dispatchers: platform -> callback(chat_id, message_text)
@@ -72,7 +73,7 @@ class BackgroundScheduler:
                 logger.info(f"Firing reminder #{reminder_id} for user {r['user_id']} on {platform}:{chat_id}")
                 
                 alert_message = (
-                    f"🔔 **Reminder from Tracky AI**\n\n"
+                    f"🔔 **Reminder from {settings.app.assistant_name}**\n\n"
                     f"{text}\n\n"
                     f"⏰ Scheduled for: {r['remind_at']}"
                 )

@@ -9,6 +9,7 @@ Features:
 """
 
 import json
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -31,9 +32,10 @@ from core.tools import ToolContext, execute_tool_call
 
 
 DEFAULT_MODELS_TO_TRY = [
+    "models/gemini-3-flash-preview",  # Lightning fast (1.8s) with thinking_budget=0 and full tool calling
+    "models/gemini-3.6-flash",        # Ultra-fast (1.5s) robust backup
+    "models/gemini-3.5-flash",        # Secondary backup
     "models/gemma-4-26b-a4b-it",
-    "models/gemma-4-31b-it",
-    "models/gemini-2.5-flash",  # Guaranteed fast backup for live demo
 ]
 
 
@@ -245,8 +247,14 @@ class LLMEngine:
         for model_name in models_to_try:
             try:
                 logger.info(f"Attempting response generation with model '{model_name}'...")
-                response_text = await self._call_model(model_name, ctx, user_message, history)
+                response_text = await asyncio.wait_for(
+                    self._call_model(model_name, ctx, user_message, history),
+                    timeout=5.0,
+                )
                 return response_text
+            except asyncio.TimeoutError:
+                last_error = f"Model '{model_name}' timed out after 5.0 seconds"
+                logger.warning(f"{last_error}. Switching immediately to fallback...")
             except Exception as e:
                 last_error = e
                 logger.warning(f"Model '{model_name}' failed with error: {e}. Switching to fallback...")

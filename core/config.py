@@ -25,8 +25,8 @@ class AppConfig(BaseModel):
 
 class GeminiConfig(BaseModel):
     api_key: str = ""
-    primary_model: str = "models/gemma-4-26b-a4b-it"
-    backup_model: str = "models/gemini-2.5-flash"
+    primary_model: str = "models/gemini-3-flash-preview"
+    backup_model: str = "models/gemini-3.6-flash"
     temperature: float = 0.4
     max_output_tokens: int = 1024
 
@@ -36,6 +36,10 @@ class DatabaseConfig(BaseModel):
 
     @property
     def absolute_path(self) -> str:
+        if os.environ.get("TRACKY_DB_PATH"):
+            return os.environ["TRACKY_DB_PATH"]
+        if os.environ.get("SETTINGS_TEST") == "1":
+            return os.path.join(BASE_DIR, "test_tracky.db")
         if os.path.isabs(self.path):
             return self.path
         return os.path.join(BASE_DIR, self.path)

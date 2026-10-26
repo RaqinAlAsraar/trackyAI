@@ -8,9 +8,54 @@ Provides callable functions for Gemini LLM Function Calling:
 
 import json
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
+
+try:
+    import pytz
+except ImportError:
+    pytz = None
+
 from core.logger import logger
 import db.database as db
+
+
+def normalize_to_utc_iso(dt_str: Optional[str], default_tz_name: str = "UTC") -> Optional[str]:
+    """
+    Parses datetime strings and returns a standard UTC ISO 8601 string (+00:00).
+    Ensures accurate comparisons in SQLite and scheduler.
+    """
+    if not dt_str or not dt_str.strip():
+        return None
+    cleaned = dt_str.strip()
+    try:
+        dt = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                dt = datetime.strptime(cleaned, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return cleaned
+
+    if dt.tzinfo is None:
+        try:
+            if ZoneInfo:
+                dt = dt.replace(tzinfo=ZoneInfo(default_tz_name))
+            elif pytz:
+                dt = pytz.timezone(default_tz_name).localize(dt)
+            else:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+    utc_dt = dt.astimezone(timezone.utc)
+    return utc_dt.isoformat()
 
 
 class ToolContext:
@@ -40,14 +85,15 @@ async def handle_create_reminder(
     Example remind_at_iso: '2026-10-27T16:00:00+05:30'
     """
     try:
+        utc_remind_at = normalize_to_utc_iso(remind_at_iso, ctx.timezone_name) or remind_at_iso
         reminder_id = await db.add_reminder(
             user_id=ctx.user_id,
             platform=ctx.platform,
             chat_id=ctx.chat_id,
             reminder_text=reminder_text,
-            remind_at=remind_at_iso,
+            remind_at=utc_remind_at,
         )
-        logger.info(f"Created reminder #{reminder_id} for user {ctx.user_id} at {remind_at_iso}")
+        logger.info(f"Created reminder #{reminder_id} for user {ctx.user_id} at {utc_remind_at} (orig: {remind_at_iso})")
         return {
             "success": True,
             "reminder_id": reminder_id,
@@ -100,12 +146,13 @@ async def handle_create_task(
     priority can be: 'low', 'normal', or 'high'.
     """
     try:
+        utc_due_date = normalize_to_utc_iso(due_date_iso, ctx.timezone_name) if due_date_iso else None
         task_id = await db.add_task(
             user_id=ctx.user_id,
             platform=ctx.platform,
             title=title,
             description=description,
-            due_date=due_date_iso,
+            due_date=utc_due_date or due_date_iso,
             priority=priority,
         )
         logger.info(f"Created task #{task_id} for user {ctx.user_id}")
@@ -179,12 +226,14 @@ async def handle_create_event(
     Schedules a calendar event or appointment with start and optional end time.
     """
     try:
+        utc_start = normalize_to_utc_iso(start_time_iso, ctx.timezone_name) or start_time_iso
+        utc_end = normalize_to_utc_iso(end_time_iso, ctx.timezone_name) if end_time_iso else None
         event_id = await db.add_event(
             user_id=ctx.user_id,
             platform=ctx.platform,
             title=title,
-            start_time=start_time_iso,
-            end_time=end_time_iso,
+            start_time=utc_start,
+            end_time=utc_end,
             location=location,
         )
         logger.info(f"Created event #{event_id} for user {ctx.user_id}")

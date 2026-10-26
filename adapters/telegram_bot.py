@@ -85,11 +85,21 @@ class TelegramAdapter(BaseMessenger):
             return False
         try:
             chat_id = int(recipient_id)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid Telegram chat_id '{recipient_id}' - skipping.")
+            return False
+
+        try:
             await self.app.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
             return True
         except Exception as e:
-            logger.error(f"Failed to send Telegram message to {recipient_id}: {e}")
-            return False
+            logger.warning(f"Failed to send Markdown message to {chat_id}: {e}. Retrying as plain text...")
+            try:
+                await self.app.bot.send_message(chat_id=chat_id, text=text)
+                return True
+            except Exception as e2:
+                logger.error(f"Failed to send plain text Telegram message to {chat_id}: {e2}")
+                return False
 
     # --- Handlers ---
 
@@ -178,7 +188,10 @@ class TelegramAdapter(BaseMessenger):
         reply = await llm_engine.generate_response(ctx, user_text, history)
 
         await memory_manager.record_interaction(user_id, "telegram", user_text, reply)
-        await update.message.reply_text(reply)
+        try:
+            await update.message.reply_text(reply, parse_mode="Markdown")
+        except Exception:
+            await update.message.reply_text(reply)
 
     async def _handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not (update.message.voice or update.message.audio):
@@ -225,8 +238,12 @@ class TelegramAdapter(BaseMessenger):
             reply = await llm_engine.generate_response(ctx, f"[Voice message]: {transcribed_text}", history)
             await memory_manager.record_interaction(user_id, "telegram", f"[Voice]: {transcribed_text}", reply)
 
-            # Send text reply
-            await update.message.reply_text(f"🎙️ *Heard*: \"{transcribed_text}\"\n\n{reply}", parse_mode="Markdown")
+            # Send text reply (with markdown fallback)
+            voice_caption = f"🎙️ *Heard*: \"{transcribed_text}\"\n\n{reply}"
+            try:
+                await update.message.reply_text(voice_caption, parse_mode="Markdown")
+            except Exception:
+                await update.message.reply_text(f"🎙️ Heard: \"{transcribed_text}\"\n\n{reply}")
 
             # Also generate voice reply if TTS enabled
             if settings.voice.tts_enabled:
