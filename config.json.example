@@ -10,8 +10,8 @@
   },
   "gemini": {
     "api_key": "YOUR_GEMINI_API_KEY",
-    "primary_model": "gemma-4-26b-it",
-    "backup_model": "gemini-1.5-flash",
+    "primary_model": "models/gemma-4-26b-a4b-it",
+    "backup_model": "models/gemini-2.5-flash",
     "temperature": 0.4,
     "max_output_tokens": 1024
   },

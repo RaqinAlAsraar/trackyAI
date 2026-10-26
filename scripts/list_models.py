@@ -13,16 +13,11 @@ with warnings.catch_warnings():
     import google.generativeai as genai
 
 FALLBACK_MODELS = [
-    {"name": "gemma-4-26b-it", "description": "Gemma 4 26B instruction-tuned model (Default)"},
-    {"name": "gemma-4-26b", "description": "Gemma 4 26B base model"},
-    {"name": "gemma-4-9b-it", "description": "Gemma 4 9B instruction-tuned model"},
-    {"name": "gemma-2-27b-it", "description": "Gemma 2 27B instruction-tuned open weights model"},
-    {"name": "gemma-2-9b-it", "description": "Gemma 2 9B instruction-tuned model"},
-    {"name": "gemini-2.0-flash", "description": "Next-generation ultra-fast multimodal model"},
-    {"name": "gemini-2.0-flash-lite", "description": "Ultra-lightweight fast Gemini 2.0 model"},
-    {"name": "gemini-1.5-flash", "description": "Fast and versatile performance across a variety of tasks (Recommended Backup)"},
-    {"name": "gemini-1.5-flash-8b", "description": "High-volume, lower-cost fast model"},
-    {"name": "gemini-1.5-pro", "description": "Complex reasoning tasks, coding, and deep understanding"},
+    {"name": "models/gemma-4-26b-a4b-it", "description": "Gemma 4 26B A4B instruction-tuned model (Default Primary)"},
+    {"name": "models/gemma-4-31b-it", "description": "Gemma 4 31B instruction-tuned model"},
+    {"name": "models/gemini-2.5-flash", "description": "Guaranteed ultra-fast fallback without thinking delay (Recommended Backup)"},
+    {"name": "models/gemini-2.0-flash", "description": "Next-generation ultra-fast multimodal model"},
+    {"name": "models/gemini-1.5-flash", "description": "Fast and versatile performance model"},
 ]
 
 
