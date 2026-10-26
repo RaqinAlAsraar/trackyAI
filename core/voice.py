@@ -42,7 +42,7 @@ class VoiceProcessor:
                 audio_bytes = f.read()
 
             response = await client.aio.models.generate_content(
-                model="models/gemini-3-flash-preview",
+                model="models/gemini-3.1-flash-lite",
                 contents=[
                     types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                     "Please accurately transcribe all spoken words from this audio clip verbatim. Output ONLY the transcribed text without commentary or quotation marks.",

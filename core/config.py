@@ -25,8 +25,8 @@ class AppConfig(BaseModel):
 
 class GeminiConfig(BaseModel):
     api_key: str = ""
-    primary_model: str = "models/gemini-3-flash-preview"
-    backup_model: str = "models/gemini-3.6-flash"
+    primary_model: str = "models/gemini-3.1-flash-lite"
+    backup_model: str = "models/gemini-3.1-flash-lite-preview"
     temperature: float = 0.4
     max_output_tokens: int = 1024
 

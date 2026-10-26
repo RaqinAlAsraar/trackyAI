@@ -32,10 +32,10 @@ from core.tools import ToolContext, execute_tool_call
 
 
 DEFAULT_MODELS_TO_TRY = [
-    "models/gemini-3-flash-preview",  # Lightning fast (1.8s) with thinking_budget=0 and full tool calling
-    "models/gemini-3.6-flash",        # Ultra-fast (1.5s) robust backup
-    "models/gemini-3.5-flash",        # Secondary backup
-    "models/gemma-4-26b-a4b-it",
+    "models/gemini-3.1-flash-lite",          # High daily quota (1500 RPD), fast & zero thinking delay
+    "models/gemini-3.1-flash-lite-preview",  # Lightning-fast fallback (~1.8s)
+    "models/gemini-3-flash-preview",
+    "models/gemini-3.6-flash",
 ]
 
 
@@ -249,11 +249,11 @@ class LLMEngine:
                 logger.info(f"Attempting response generation with model '{model_name}'...")
                 response_text = await asyncio.wait_for(
                     self._call_model(model_name, ctx, user_message, history),
-                    timeout=5.0,
+                    timeout=12.0,
                 )
                 return response_text
             except asyncio.TimeoutError:
-                last_error = f"Model '{model_name}' timed out after 5.0 seconds"
+                last_error = f"Model '{model_name}' timed out after 12.0 seconds"
                 logger.warning(f"{last_error}. Switching immediately to fallback...")
             except Exception as e:
                 last_error = e
@@ -299,7 +299,7 @@ class LLMEngine:
             history=initial_history,
         )
 
-        response = await chat.send_message(user_message)
+        response = await asyncio.wait_for(chat.send_message(user_message), timeout=6.0)
 
         # Handle tool calling loops (up to 5 turns)
         for _ in range(5):
@@ -324,7 +324,7 @@ class LLMEngine:
                 )
 
             # Send tool execution results back to LLM
-            response = await chat.send_message(tool_responses)
+            response = await asyncio.wait_for(chat.send_message(tool_responses), timeout=6.0)
 
         return response.text or "I've handled that for you!"
 
