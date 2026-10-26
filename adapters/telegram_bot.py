@@ -94,6 +94,12 @@ class TelegramAdapter(BaseMessenger):
     # --- Handlers ---
 
     async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user_id = str(update.effective_user.id) if update.effective_user else ""
+        allowed, msg = guardrails.check_user_allowed(user_id, "telegram")
+        if not allowed:
+            await update.message.reply_text(f"⚠️ {msg}")
+            return
+
         user_display = (update.effective_user.first_name if update.effective_user else None) or settings.app.user_name
         welcome_text = (
             f"👋 Hey {user_display}! I'm **{settings.app.assistant_name}**, your personal assistant.\n\n"
@@ -107,6 +113,12 @@ class TelegramAdapter(BaseMessenger):
         await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
     async def _handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user_id = str(update.effective_user.id) if update.effective_user else ""
+        allowed, msg = guardrails.check_user_allowed(user_id, "telegram")
+        if not allowed:
+            await update.message.reply_text(f"⚠️ {msg}")
+            return
+
         help_text = (
             "🤖 **Tracky AI Commands & Capabilities**:\n\n"
             "• Natural Text & Voice: Just speak or type naturally.\n"
@@ -120,6 +132,12 @@ class TelegramAdapter(BaseMessenger):
         await update.message.reply_text(help_text, parse_mode="Markdown")
 
     async def _handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user_id = str(update.effective_user.id) if update.effective_user else ""
+        allowed, msg = guardrails.check_user_allowed(user_id, "telegram")
+        if not allowed:
+            await update.message.reply_text(f"⚠️ {msg}")
+            return
+
         status_text = (
             "🟢 **Tracky AI Status**:\n\n"
             f"• Model: `{settings.gemini.primary_model}` (Backup: `{settings.gemini.backup_model}`)\n"
@@ -168,6 +186,11 @@ class TelegramAdapter(BaseMessenger):
 
         user_id = str(update.effective_user.id)
         chat_id = str(update.effective_chat.id)
+
+        allowed, error_msg = guardrails.check_user_allowed(user_id, "telegram")
+        if not allowed:
+            await update.message.reply_text(f"⚠️ {error_msg}")
+            return
 
         # Download voice file
         await context.bot.send_chat_action(chat_id=chat_id, action="record_voice")

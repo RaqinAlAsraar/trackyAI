@@ -153,9 +153,11 @@ TELEGRAM_ENABLED=false
 WHATSAPP_ENABLED=false
 TELEGRAM_TOKEN=""
 TELEGRAM_MODE="polling"
+TG_USER_ID=""
 TWILIO_SID=""
 TWILIO_TOKEN=""
 TWILIO_PHONE="whatsapp:+14155238886"
+WA_USER_PHONE=""
 
 if [ "$PLATFORM_CHOICE" == "1" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
     TELEGRAM_ENABLED=true
@@ -172,6 +174,11 @@ if [ "$PLATFORM_CHOICE" == "1" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
     else
         TELEGRAM_MODE="polling"
     fi
+
+    echo -e "\n${YELLOW}Telegram User ID Restriction (Sole User Access):${NC}"
+    echo "To restrict Tracky so it operates solely for you and ignores strangers:"
+    echo "(Tip: Send any message to @userinfobot on Telegram to see your numeric User ID)"
+    read -rp "Enter your Telegram User ID (press Enter to skip restriction): " TG_USER_ID
 fi
 
 if [ "$PLATFORM_CHOICE" == "2" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
@@ -184,6 +191,10 @@ if [ "$PLATFORM_CHOICE" == "2" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
     if [ -n "$INPUT_TWILIO_PHONE" ]; then
         TWILIO_PHONE="$INPUT_TWILIO_PHONE"
     fi
+
+    echo -e "\n${YELLOW}WhatsApp Phone Number Restriction (Sole User Access):${NC}"
+    echo "Enter your personal phone number to restrict Tracky solely to you."
+    read -rp "Enter your phone number (e.g. +1234567890, or press Enter to skip restriction): " WA_USER_PHONE
 fi
 
 # Personalization
@@ -239,6 +250,16 @@ echo -e "${GREEN}✓ Timezone configured: $USER_TZ${NC}"
 # 4. Generate config.json
 echo -e "\n${BLUE}[4/6] Generating config.json...${NC}"
 
+TG_ALLOWED_IDS_JSON=""
+if [ -n "$TG_USER_ID" ]; then
+    TG_ALLOWED_IDS_JSON="$TG_USER_ID"
+fi
+
+WA_ALLOWED_NUMS_JSON=""
+if [ -n "$WA_USER_PHONE" ]; then
+    WA_ALLOWED_NUMS_JSON="\"$WA_USER_PHONE\""
+fi
+
 cat <<EOF > config.json
 {
   "app": {
@@ -270,7 +291,7 @@ cat <<EOF > config.json
     "bot_token": "$TELEGRAM_TOKEN",
     "mode": "$TELEGRAM_MODE",
     "webhook_url": "",
-    "allowed_user_ids": []
+    "allowed_user_ids": [$TG_ALLOWED_IDS_JSON]
   },
   "whatsapp": {
     "enabled": $WHATSAPP_ENABLED,
@@ -280,7 +301,8 @@ cat <<EOF > config.json
     "twilio_phone_number": "$TWILIO_PHONE",
     "meta_phone_number_id": "",
     "meta_access_token": "",
-    "meta_verify_token": "tracky_webhook_verify_token"
+    "meta_verify_token": "tracky_webhook_verify_token",
+    "allowed_phone_numbers": [$WA_ALLOWED_NUMS_JSON]
   },
   "voice": {
     "stt_enabled": true,

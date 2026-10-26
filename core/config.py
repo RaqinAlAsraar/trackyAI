@@ -70,6 +70,7 @@ class WhatsAppConfig(BaseModel):
     meta_phone_number_id: str = ""
     meta_access_token: str = ""
     meta_verify_token: str = "tracky_webhook_verify_token"
+    allowed_phone_numbers: List[str] = Field(default_factory=list)
 
 
 class VoiceConfig(BaseModel):

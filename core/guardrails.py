@@ -25,9 +25,29 @@ class Guardrails:
                 numeric_id = int(user_id)
                 if numeric_id not in settings.telegram.allowed_user_ids:
                     logger.warning(f"Unauthorized access attempt by Telegram user {user_id}")
-                    return False, "Access restricted. You are not on the authorized user list."
+                    return False, "Access restricted. This assistant is private and configured solely for its owner."
             except ValueError:
-                pass
+                return False, "Access restricted. Invalid user ID."
+
+        if platform == "whatsapp" and settings.whatsapp.allowed_phone_numbers:
+            clean_incoming = (
+                user_id.replace("whatsapp:", "")
+                .replace("+", "")
+                .replace(" ", "")
+                .replace("-", "")
+            )
+            clean_allowed = [
+                num.replace("whatsapp:", "")
+                .replace("+", "")
+                .replace(" ", "")
+                .replace("-", "")
+                for num in settings.whatsapp.allowed_phone_numbers
+                if num.strip()
+            ]
+            if clean_allowed and clean_incoming not in clean_allowed:
+                logger.warning(f"Unauthorized access attempt by WhatsApp number {user_id}")
+                return False, "Access restricted. This assistant is private and configured solely for its owner."
+
         return True, ""
 
     def check_rate_limit(self, user_id: str) -> Tuple[bool, str]:
