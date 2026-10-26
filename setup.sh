@@ -339,9 +339,6 @@ echo -e "${NC}"
 echo "To start Tracky AI anytime, simply run:"
 echo -e "  ${BOLD}./run.sh${NC}"
 echo ""
-echo "Log file: ${CYAN}logs/tracky.log${NC}"
-echo "Memory file: ${CYAN}memory.log${NC}"
+echo -e "Log file: ${CYAN}logs/tracky.log${NC}"
+echo -e "Memory file: ${CYAN}memory.log${NC}"
 echo ""
-EOF
-
-chmod +x setup.sh
