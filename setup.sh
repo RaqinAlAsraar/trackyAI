@@ -188,9 +188,8 @@ fi
 
 # Personalization
 echo -e "\n${BOLD}${CYAN}--- Personalization ---${NC}"
-DEFAULT_USER_NAME="Ali Abbas"
-read -rp "What is your name? (default: $DEFAULT_USER_NAME): " USER_NAME
-USER_NAME=${USER_NAME:-$DEFAULT_USER_NAME}
+read -rp "What is your name? " USER_NAME
+USER_NAME=${USER_NAME:-"User"}
 
 DEFAULT_ASSISTANT_NAME="Tracky"
 read -rp "What would you like to name your AI assistant? (default: $DEFAULT_ASSISTANT_NAME): " ASSISTANT_NAME
