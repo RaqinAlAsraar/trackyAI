@@ -30,6 +30,7 @@ from google.genai import types
 from core.logger import logger
 from core.config import settings
 from core.tools import ToolContext, execute_tool_call
+from core.local_llm import local_llm_engine, offline_fallback_handler
 
 
 DEFAULT_MODELS_TO_TRY = [
@@ -270,9 +271,35 @@ class LLMEngine:
                 last_error = e
                 logger.warning(f"Model '{model_name}' failed with error: {e}. Switching to fallback...")
 
+        logger.warning(f"All cloud Gemini models exhausted or unavailable (last error: {last_error}). Triggering offline fallback...")
+
+        # 1. Attempt Local Gemma LLM via Ollama if enabled
+        if settings.local_llm.enabled and settings.local_llm.fallback_on_error:
+            try:
+                logger.info(f"Attempting Local Gemma LLM fallback with '{settings.local_llm.model}'...")
+                local_response = await local_llm_engine.generate_response(ctx, user_message, history)
+                if local_response:
+                    self.last_model_used = f"local:{settings.local_llm.model}"
+                    self.last_duration = round(time.time() - start_time, 2)
+                    return local_response
+            except Exception as e:
+                logger.warning(f"Local LLM fallback attempt failed: {e}")
+
+        # 2. Execute deterministic offline fallback handler (reminders, tasks, schedules)
+        try:
+            logger.info("Local LLM server unavailable. Activating intelligent offline fallback handler...")
+            fallback_response = await offline_fallback_handler(ctx, user_message)
+            self.last_model_used = "offline:rule_engine"
+            self.last_duration = round(time.time() - start_time, 2)
+            return fallback_response
+        except Exception as e:
+            logger.error(f"Offline fallback handler encountered an error: {e}")
+
         self.last_duration = round(time.time() - start_time, 2)
-        logger.error(f"All models failed. Last error: {last_error}")
-        return f"I ran into an issue connecting to my AI brain. Error: {last_error}"
+        return (
+            f"⚠️ I'm having trouble connecting to both cloud and local AI brains right now. "
+            f"Please check your network connection or run 'ollama run gemma2:2b' for offline AI."
+        )
 
     async def _call_model(
         self,

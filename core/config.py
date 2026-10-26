@@ -97,9 +97,19 @@ class GuardrailsConfig(BaseModel):
     max_message_chars: int = 2000
 
 
+class LocalLLMConfig(BaseModel):
+    enabled: bool = True
+    provider: str = "ollama"
+    host: str = "http://127.0.0.1:11434"
+    model: str = "gemma2:2b"
+    fallback_on_error: bool = True
+    timeout: float = 20.0
+
+
 class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     gemini: GeminiConfig = Field(default_factory=GeminiConfig)
+    local_llm: LocalLLMConfig = Field(default_factory=LocalLLMConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)

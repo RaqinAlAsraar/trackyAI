@@ -206,3 +206,44 @@ async def test_voice_tts():
     assert os.path.exists(output_audio)
     assert os.path.getsize(output_audio) > 100
     os.unlink(output_audio)
+
+
+@pytest.mark.asyncio
+async def test_local_llm_and_offline_fallback():
+    from core.local_llm import local_llm_engine, offline_fallback_handler
+    from core.llm import llm_engine
+
+    ctx = ToolContext(
+        user_id="test_offline_user",
+        platform="telegram",
+        chat_id="12345",
+        timezone_name="UTC",
+        user_name="OfflineTester",
+        assistant_name="Tracky",
+    )
+
+    # 1. Test offline reminder creation
+    reply_reminder = await offline_fallback_handler(ctx, "remind me in 15 minutes to take a break")
+    assert "Reminder Scheduled" in reply_reminder
+    assert "take a break" in reply_reminder
+
+    # Verify reminder exists in database
+    reminders = await db.get_active_reminders("test_offline_user")
+    assert any("take a break" in r["reminder_text"] for r in reminders)
+
+    # 2. Test offline task creation
+    reply_task = await offline_fallback_handler(ctx, "add task: study offline backup")
+    assert "Task Created" in reply_task
+    assert "study offline backup" in reply_task
+
+    # 3. Test offline task listing
+    reply_list = await offline_fallback_handler(ctx, "list my tasks")
+    assert "study offline backup" in reply_list
+
+    # 4. Test offline help
+    reply_help = await offline_fallback_handler(ctx, "who are you")
+    assert "Offline Mode" in reply_help
+
+    # 5. Test local_llm_engine availability check (does not raise exception)
+    is_avail = await local_llm_engine.is_available()
+    assert isinstance(is_avail, bool)

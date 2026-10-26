@@ -21,6 +21,7 @@ config.json
 logs/
 *.log
 memory.log
+data/
 
 # IDE & OS
 .vscode/
