@@ -1,0 +1,50 @@
+{
+  "app": {
+    "name": "Tracky AI",
+    "host": "0.0.0.0",
+    "port": 8000,
+    "timezone": "Asia/Kolkata",
+    "debug": true
+  },
+  "gemini": {
+    "api_key": "YOUR_GEMINI_API_KEY",
+    "primary_model": "gemini-2.0-flash",
+    "backup_model": "gemini-1.5-flash",
+    "temperature": 0.4,
+    "max_output_tokens": 1024
+  },
+  "database": {
+    "path": "tracky.db"
+  },
+  "memory": {
+    "max_history_messages": 100,
+    "max_history_hours": 48,
+    "memory_log_file": "memory.log"
+  },
+  "telegram": {
+    "enabled": true,
+    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+    "mode": "polling",
+    "webhook_url": "https://yourdomain.com/webhook/telegram",
+    "allowed_user_ids": []
+  },
+  "whatsapp": {
+    "enabled": false,
+    "provider": "twilio",
+    "twilio_account_sid": "YOUR_TWILIO_ACCOUNT_SID",
+    "twilio_auth_token": "YOUR_TWILIO_AUTH_TOKEN",
+    "twilio_phone_number": "whatsapp:+14155238886",
+    "meta_phone_number_id": "",
+    "meta_access_token": "",
+    "meta_verify_token": "tracky_webhook_verify_token"
+  },
+  "voice": {
+    "stt_enabled": true,
+    "tts_enabled": true,
+    "tts_voice": "en-US-ChristopherNeural"
+  },
+  "guardrails": {
+    "rate_limit_messages_per_minute": 20,
+    "max_message_chars": 2000
+  }
+}
