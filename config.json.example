@@ -1,6 +1,8 @@
 {
   "app": {
     "name": "Tracky AI",
+    "assistant_name": "Tracky",
+    "user_name": "Ali Abbas",
     "host": "0.0.0.0",
     "port": 8000,
     "timezone": "Asia/Kolkata",

@@ -15,11 +15,21 @@ import db.database as db
 
 class ToolContext:
     """Carries session context for the currently executing user and platform."""
-    def __init__(self, user_id: str, platform: str, chat_id: str, timezone_name: str = "UTC"):
+    def __init__(
+        self,
+        user_id: str,
+        platform: str,
+        chat_id: str,
+        timezone_name: str = "UTC",
+        user_name: str = "",
+        assistant_name: str = "",
+    ):
         self.user_id = user_id
         self.platform = platform
         self.chat_id = chat_id
         self.timezone_name = timezone_name
+        self.user_name = user_name
+        self.assistant_name = assistant_name
 
 
 async def handle_create_reminder(

@@ -21,27 +21,34 @@ from core.config import settings
 from core.tools import ToolContext, execute_tool_call
 
 
-def get_system_instruction(user_timezone: str = "UTC") -> str:
+def get_system_instruction(
+    user_timezone: str = "UTC",
+    user_name: str = "",
+    assistant_name: str = "Tracky",
+) -> str:
     try:
         tz = pytz.timezone(user_timezone)
         current_time_str = datetime.now(tz).strftime("%A, %Y-%m-%d %H:%M:%S %Z (UTC%z)")
     except Exception:
         current_time_str = datetime.utcnow().strftime("%A, %Y-%m-%d %H:%M:%S UTC")
 
-    return f"""You are Tracky, an ultra-helpful, friendly, and reliable personal AI assistant.
-You help the user manage their tasks, reminders, schedules, and daily routines through natural conversation.
+    display_user = user_name if user_name else "my user"
+
+    return f"""You are {assistant_name}, a friendly, intelligent, and highly capable personal AI assistant.
+You work exclusively for {display_user}. You know {display_user}'s name and address them warmly by their name when appropriate.
 
 CURRENT REFERENCE TIME:
 {current_time_str}
 User's Timezone: {user_timezone}
 
 CORE RESPONSIBILITIES:
-1. REMINDERS: When the user says e.g. "I have a test tomorrow, remind me at 4 pm today to study", parse the time accurately relative to the CURRENT REFERENCE TIME, call `create_reminder(reminder_text, remind_at_iso)` with ISO 8601 formatted datetime including offset or UTC, and reply warmly confirming the reminder.
-2. TASKS: Track to-do items using `create_task`, `list_tasks`, `complete_task`, and `delete_task`.
-3. EVENTS: Schedule appointments or agenda items using `create_event`, `list_events`, and `delete_event`.
-4. LISTING & QUERYING: When the user asks "what do I have today?", "show my reminders", or "what's pending?", call the relevant list tools and present a clean, concise, human-readable summary.
-5. CONVERSATION: Remember past context from the conversation history. Reply warmly, concisely, and naturally like a smart personal assistant.
-6. CLARITY: If the user's requested time is completely ambiguous, politely ask for clarification. Otherwise, deduce the most sensible interpretation and confirm it.
+1. PERSONAL IDENTITY: Your name is {assistant_name}. Always remember your name and {display_user}'s name.
+2. REMINDERS: When {display_user} asks e.g. "I have a test tomorrow, remind me at 4 pm today to study", parse the target time accurately relative to the CURRENT REFERENCE TIME, call `create_reminder(reminder_text, remind_at_iso)` with ISO 8601 formatted datetime including timezone offset or UTC, and reply warmly confirming the reminder.
+3. TASKS: Track to-do items using `create_task`, `list_tasks`, `complete_task`, and `delete_task`.
+4. EVENTS: Schedule appointments or agenda items using `create_event`, `list_events`, and `delete_event`.
+5. LISTING & QUERYING: When {display_user} asks "what do I have today?", "show my reminders", or "what's pending?", call the relevant list tools and present a clean, concise, human-readable summary.
+6. CONVERSATION: Remember past context from the conversation history. Reply warmly, concisely, and naturally like a smart personal assistant.
+7. CLARITY: If the requested time is ambiguous, politely ask for clarification. Otherwise, deduce the most sensible interpretation and confirm it.
 """
 
 
@@ -211,7 +218,11 @@ class LLMEngine:
         user_message: str,
         history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
-        system_instruction = get_system_instruction(ctx.timezone_name)
+        system_instruction = get_system_instruction(
+            user_timezone=ctx.timezone_name,
+            user_name=ctx.user_name or settings.app.user_name,
+            assistant_name=ctx.assistant_name or settings.app.assistant_name,
+        )
         tools = [{"function_declarations": get_genai_tools()}]
 
         model = genai.GenerativeModel(

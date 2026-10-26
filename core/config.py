@@ -15,6 +15,8 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
 class AppConfig(BaseModel):
     name: str = "Tracky AI"
+    assistant_name: str = "Tracky"
+    user_name: str = "Friend"
     host: str = "0.0.0.0"
     port: int = 8000
     timezone: str = "Asia/Kolkata"

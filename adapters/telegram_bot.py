@@ -94,9 +94,9 @@ class TelegramAdapter(BaseMessenger):
     # --- Handlers ---
 
     async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
+        user_display = (update.effective_user.first_name if update.effective_user else None) or settings.app.user_name
         welcome_text = (
-            f"👋 Hey {user.first_name if user else 'there'}! I'm **Tracky AI**, your personal assistant.\n\n"
+            f"👋 Hey {user_display}! I'm **{settings.app.assistant_name}**, your personal assistant.\n\n"
             f"You can talk to me like a real human! Just tell me what you need, like:\n"
             f"• *\"I have a test tomorrow, remind me at 4 pm today to study\"*\n"
             f"• *\"Add a task: Finish hackathon pitch deck by 8pm\"*\n"
@@ -146,11 +146,14 @@ class TelegramAdapter(BaseMessenger):
         # Show typing indicator
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
+        user_name = (update.effective_user.first_name if update.effective_user else None) or settings.app.user_name
         ctx = ToolContext(
             user_id=user_id,
             platform="telegram",
             chat_id=chat_id,
             timezone_name=settings.app.timezone,
+            user_name=user_name,
+            assistant_name=settings.app.assistant_name,
         )
 
         history = await memory_manager.get_context_history(user_id)
@@ -185,11 +188,14 @@ class TelegramAdapter(BaseMessenger):
                 return
 
             # Process transcribed text through LLM
+            user_name = (update.effective_user.first_name if update.effective_user else None) or settings.app.user_name
             ctx = ToolContext(
                 user_id=user_id,
                 platform="telegram",
                 chat_id=chat_id,
                 timezone_name=settings.app.timezone,
+                user_name=user_name,
+                assistant_name=settings.app.assistant_name,
             )
 
             history = await memory_manager.get_context_history(user_id)

@@ -186,20 +186,56 @@ if [ "$PLATFORM_CHOICE" == "2" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
     fi
 fi
 
+# Personalization
+echo -e "\n${BOLD}${CYAN}--- Personalization ---${NC}"
+DEFAULT_USER_NAME="Ali Abbas"
+read -rp "What is your name? (default: $DEFAULT_USER_NAME): " USER_NAME
+USER_NAME=${USER_NAME:-$DEFAULT_USER_NAME}
+
+DEFAULT_ASSISTANT_NAME="Tracky"
+read -rp "What would you like to name your AI assistant? (default: $DEFAULT_ASSISTANT_NAME): " ASSISTANT_NAME
+ASSISTANT_NAME=${ASSISTANT_NAME:-$DEFAULT_ASSISTANT_NAME}
+echo -e "${GREEN}✓ Great! $ASSISTANT_NAME will assist $USER_NAME.${NC}"
+
 # Timezone Selection
-DEFAULT_TZ="Asia/Kolkata"
-if [ -f /etc/timezone ]; then
-    DEFAULT_TZ=$(cat /etc/timezone)
-elif command -v timedatectl &> /dev/null; then
-    DETECTED_TZ=$(timedatectl | grep "Time zone" | awk '{print $3}')
-    if [ -n "$DETECTED_TZ" ]; then
-        DEFAULT_TZ="$DETECTED_TZ"
-    fi
+DETECTED_TZ=$(.venv/bin/python3 -c "import tzlocal; print(tzlocal.get_localzone_name())" 2>/dev/null || echo "Asia/Kolkata")
+if [ -z "$DETECTED_TZ" ]; then
+    DETECTED_TZ="Asia/Kolkata"
 fi
 
-echo -e "\n${YELLOW}Your Timezone:${NC}"
-read -rp "Enter timezone (default: $DEFAULT_TZ): " USER_TZ
-USER_TZ=${USER_TZ:-$DEFAULT_TZ}
+echo -e "\n${BOLD}${CYAN}--- Timezone Configuration ---${NC}"
+echo -e "Detected system timezone: ${GREEN}${DETECTED_TZ}${NC}"
+echo "1) Use detected timezone: ${DETECTED_TZ} (Press Enter)"
+echo "2) Asia/Kolkata (IST - India +05:30)"
+echo "3) America/New_York (EST/EDT - US Eastern)"
+echo "4) America/Los_Angeles (PST/PDT - US Pacific)"
+echo "5) America/Chicago (CST/CDT - US Central)"
+echo "6) Europe/London (GMT/BST - UK)"
+echo "7) Europe/Berlin (CET/CEST - Central Europe)"
+echo "8) Asia/Dubai (GST - UAE +04:00)"
+echo "9) Asia/Singapore (SGT - Singapore +08:00)"
+echo "10) UTC"
+echo "11) Custom timezone string (enter manually)"
+read -rp "Select timezone [1-11] (default: 1 [${DETECTED_TZ}]): " TZ_CHOICE
+TZ_CHOICE=${TZ_CHOICE:-1}
+
+case $TZ_CHOICE in
+    1) USER_TZ="$DETECTED_TZ" ;;
+    2) USER_TZ="Asia/Kolkata" ;;
+    3) USER_TZ="America/New_York" ;;
+    4) USER_TZ="America/Los_Angeles" ;;
+    5) USER_TZ="America/Chicago" ;;
+    6) USER_TZ="Europe/London" ;;
+    7) USER_TZ="Europe/Berlin" ;;
+    8) USER_TZ="Asia/Dubai" ;;
+    9) USER_TZ="Asia/Singapore" ;;
+    10) USER_TZ="UTC" ;;
+    11)
+        read -rp "Enter timezone string (e.g. Asia/Kolkata): " USER_TZ
+        ;;
+    *) USER_TZ="$DETECTED_TZ" ;;
+esac
+echo -e "${GREEN}✓ Timezone configured: $USER_TZ${NC}"
 
 # 4. Generate config.json
 echo -e "\n${BLUE}[4/6] Generating config.json...${NC}"
@@ -208,6 +244,8 @@ cat <<EOF > config.json
 {
   "app": {
     "name": "Tracky AI",
+    "assistant_name": "$ASSISTANT_NAME",
+    "user_name": "$USER_NAME",
     "host": "0.0.0.0",
     "port": 8000,
     "timezone": "$USER_TZ",

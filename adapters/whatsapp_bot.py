@@ -100,11 +100,14 @@ async def receive_twilio_whatsapp(
         twiml = f"<Response><Message>{error_msg}</Message></Response>"
         return Response(content=twiml, media_type="application/xml")
 
+    user_name = ProfileName or settings.app.user_name or "Friend"
     ctx = ToolContext(
         user_id=user_id,
         platform="whatsapp",
         chat_id=From,
         timezone_name=settings.app.timezone,
+        user_name=user_name,
+        assistant_name=settings.app.assistant_name,
     )
 
     history = await memory_manager.get_context_history(user_id)
