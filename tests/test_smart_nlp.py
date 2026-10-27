@@ -98,3 +98,67 @@ async def test_smart_nlp_delete_by_ids_and_inactive():
     reply_clean = await nlp_engine.process_user_intent(ctx, "Remove the inactive reminders now")
     assert reply_clean is not None
     assert "All done" in reply_clean or "already tidy" in reply_clean
+
+
+@pytest.mark.asyncio
+async def test_chat_issues_full_workflow():
+    ctx = ToolContext(
+        user_id="nlp_test_user_4",
+        platform="telegram",
+        chat_id="9999",
+        timezone_name="Asia/Kolkata",
+        user_name="Ali Abbas",
+        assistant_name="Angel"
+    )
+
+    # 1. Date & Morning parsing (Issue #3)
+    # "[Voice]: I have exam on 30 October. So set a reminder for that day at 6:00 a.m. morning."
+    msg_exam = "I have exam on 30 October. So set a reminder for that day at 6:00 a.m. morning."
+    reply_exam = await nlp_engine.process_user_intent(ctx, msg_exam)
+    assert reply_exam is not None
+    assert "Reminder Scheduled" in reply_exam
+    assert "Exam" in reply_exam
+    assert "6:00 AM" in reply_exam
+    assert "Oct 30" in reply_exam
+
+    # 2. Rescheduling (Issue #5)
+    # Add an initial reminder
+    res_init = await db.add_reminder(ctx.user_id, ctx.platform, ctx.chat_id, "check project", "2026-10-28T07:17:00+00:00")
+    # "Change time for #<id> for today 1:15"
+    reply_resched = await nlp_engine.process_user_intent(ctx, f"Change time for #{res_init} for today 1:15")
+    assert reply_resched is not None
+    assert "Reminder Rescheduled" in reply_resched
+    assert "1:15 PM" in reply_resched
+
+    # 3. Compound Eliminate + Add (Issue #1)
+    # "Eliminate the reminder <id>, add a new reminder to check the project after 1:15 p.m."
+    compound_msg = f"Eliminate the reminder {res_init}, add a new reminder to check the project after 1:15 p.m."
+    reply_compound = await nlp_engine.process_user_intent(ctx, compound_msg)
+    assert reply_compound is not None
+    assert f"Removed reminder #{res_init}" in reply_compound
+    assert "check the project" in reply_compound
+    assert "1:15 PM" in reply_compound
+
+    # 4. Fuzzy Task Completion (Issue #2)
+    await db.add_multiple_tasks(ctx.user_id, ctx.platform, ["hacking in it", "coding", "exam prep"])
+    reply_done = await nlp_engine.process_user_intent(ctx, "Hacki and coding are done")
+    assert reply_done is not None
+    assert "Marked 2 Tasks as Completed" in reply_done
+    assert "coding" in reply_done
+    assert "hacking in it" in reply_done
+
+    # 5. User Feedback: "You were supposed to remove these tasks when they are done"
+    reply_supposed = await nlp_engine.process_user_intent(ctx, "You were supposed to remove these tasks when they are done")
+    assert reply_supposed is not None
+    assert "Cleaned up" in reply_supposed or "completed task" in reply_supposed
+
+    # 6. Timers mapping (Issue #4)
+    reply_timers = await nlp_engine.process_user_intent(ctx, "Timers")
+    assert reply_timers is not None
+    assert "Active Timers & Reminders" in reply_timers
+
+    # 7. Feedback: "Wrong reminder time"
+    reply_wrong = await nlp_engine.process_user_intent(ctx, "Wrong reminder time")
+    assert reply_wrong is not None
+    assert "My apologies" in reply_wrong
+

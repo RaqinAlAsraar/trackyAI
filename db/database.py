@@ -391,6 +391,50 @@ async def delete_reminders_by_ids(reminder_ids: List[int], user_id: str) -> int:
         return cursor.rowcount
 
 
+async def update_reminder_time(reminder_id: int, user_id: str, new_remind_at: str) -> bool:
+    """Updates the scheduled time for an existing reminder."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "UPDATE reminders SET remind_at = ?, status = 'pending' WHERE id = ? AND user_id = ?",
+            (new_remind_at, reminder_id, user_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def complete_tasks_by_keywords(user_id: str, keywords: List[str]) -> List[Dict[str, Any]]:
+    """Finds pending tasks matching given keywords and marks them completed."""
+    active_tasks = await get_tasks(user_id, status="pending")
+    completed = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+    async with get_db() as db:
+        for task in active_tasks:
+            t_title = task["title"].lower()
+            for kw in keywords:
+                clean_kw = kw.strip().lower()
+                # Match if prefix or substring matches
+                if len(clean_kw) >= 3 and (clean_kw in t_title or t_title.startswith(clean_kw) or clean_kw.startswith(t_title[:4])):
+                    await db.execute(
+                        "UPDATE tasks SET status = 'completed', completed_at = ? WHERE id = ? AND user_id = ?",
+                        (now_iso, task["id"], user_id),
+                    )
+                    completed.append(task)
+                    break
+        await db.commit()
+    return completed
+
+
+async def delete_completed_tasks(user_id: str) -> int:
+    """Deletes all completed tasks for a user."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "DELETE FROM tasks WHERE user_id = ? AND status = 'completed'",
+            (user_id,),
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
 async def delete_inactive_reminders(user_id: str) -> int:
     """Removes all triggered, cancelled, or past-due reminders for user."""
     now_iso = datetime.now(timezone.utc).isoformat()
