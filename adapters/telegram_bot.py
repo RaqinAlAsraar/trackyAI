@@ -11,6 +11,7 @@ import os
 import tempfile
 from typing import Optional
 from telegram import Update
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -47,7 +48,8 @@ class TelegramAdapter(BaseMessenger):
             return
 
         logger.info(f"Initializing Telegram Bot in mode='{self.mode}'...")
-        self.app = Application.builder().token(self.bot_token).build()
+        req = HTTPXRequest(connect_timeout=25.0, read_timeout=25.0, write_timeout=25.0)
+        self.app = Application.builder().token(self.bot_token).request(req).build()
 
         # Command handlers
         self.app.add_handler(CommandHandler("start", self._handle_start))
@@ -61,15 +63,25 @@ class TelegramAdapter(BaseMessenger):
         # Register proactive alert dispatcher
         register_dispatcher("telegram", self.send_message)
 
-        # Initialize & start
-        await self.app.initialize()
-        await self.app.start()
-
-        if self.mode == "polling":
-            logger.info("Starting Telegram long polling...")
-            await self.app.updater.start_polling(drop_pending_updates=True)
-        else:
-            logger.info(f"Telegram webhook mode enabled at {settings.telegram.webhook_url}")
+        # Initialize & start with retry
+        for attempt in range(1, 4):
+            try:
+                await self.app.initialize()
+                await self.app.start()
+                if self.mode == "polling":
+                    logger.info("Starting Telegram long polling...")
+                    await self.app.updater.start_polling(drop_pending_updates=True)
+                else:
+                    logger.info(f"Telegram webhook mode enabled at {settings.telegram.webhook_url}")
+                logger.info("Telegram Bot started successfully.")
+                break
+            except Exception as e:
+                logger.warning(f"Telegram start attempt {attempt}/3 failed: {e}")
+                if attempt == 3:
+                    logger.error("Failed to initialize Telegram Bot after 3 attempts.")
+                    raise
+                import asyncio
+                await asyncio.sleep(2)
 
     async def stop(self) -> None:
         if self.app:
