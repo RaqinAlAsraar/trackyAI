@@ -198,14 +198,10 @@ async def test_scheduler_dispatch():
 
 
 @pytest.mark.asyncio
-async def test_voice_tts():
-    # Test Edge-TTS voice generation
+async def test_voice_tts_disabled():
+    # Verify TTS is disabled and Tracky responds in text only
     output_audio = await voice_processor.text_to_speech("Tracky AI is online and ready!")
-    if output_audio is None:
-        pytest.skip("External TTS endpoint unreachable in current test environment")
-    assert os.path.exists(output_audio)
-    assert os.path.getsize(output_audio) > 100
-    os.unlink(output_audio)
+    assert output_audio is None
 
 
 @pytest.mark.asyncio
@@ -247,3 +243,25 @@ async def test_local_llm_and_offline_fallback():
     # 5. Test local_llm_engine availability check (does not raise exception)
     is_avail = await local_llm_engine.is_available()
     assert isinstance(is_avail, bool)
+
+
+@pytest.mark.asyncio
+async def test_llm_engine_cascade_and_metrics():
+    from core.llm import llm_engine
+
+    ctx = ToolContext(
+        user_id="test_cascade_user",
+        platform="telegram",
+        chat_id="55555",
+        timezone_name="UTC",
+        user_name="CascadeTester",
+        assistant_name="Tracky",
+    )
+
+    # Calling generate_response in offline/test environment should seamlessly produce a response
+    reply = await llm_engine.generate_response(ctx, "remind me in 30 minutes to drink water")
+    assert reply is not None
+    assert len(reply) > 5
+    assert llm_engine.last_duration is not None
+    assert llm_engine.last_model_used is not None
+

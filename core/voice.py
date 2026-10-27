@@ -60,25 +60,10 @@ class VoiceProcessor:
 
     async def text_to_speech(self, text: str, output_path: Optional[str] = None) -> Optional[str]:
         """
-        Generates realistic voice audio using edge-tts.
-        Returns the path to the generated audio file (.mp3).
+        TTS is disabled. Tracky responds to voice recordings in text only.
         """
-        if not self.tts_enabled:
-            logger.info("TTS is disabled in configuration.")
-            return None
-
-        if not output_path:
-            fd, output_path = tempfile.mkstemp(suffix=".mp3")
-            os.close(fd)
-
-        try:
-            communicate = edge_tts.Communicate(text, self.tts_voice)
-            await communicate.save(output_path)
-            logger.info(f"Generated TTS audio file at {output_path}")
-            return output_path
-        except Exception as e:
-            logger.error(f"Failed to generate TTS audio: {e}")
-            return None
+        return None
 
 
 voice_processor = VoiceProcessor()
+

@@ -83,11 +83,15 @@ class TelegramAdapter(BaseMessenger):
         if not self.app or not self.app.bot:
             logger.error("Cannot send Telegram message: Bot not initialized.")
             return False
+        chat_id: Any = recipient_id
         try:
             chat_id = int(recipient_id)
         except (ValueError, TypeError):
-            logger.warning(f"Invalid Telegram chat_id '{recipient_id}' - skipping.")
-            return False
+            if isinstance(recipient_id, str) and recipient_id.startswith("@"):
+                chat_id = recipient_id
+            else:
+                logger.warning(f"Invalid Telegram chat_id '{recipient_id}' - skipping.")
+                return False
 
         try:
             await self.app.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
@@ -254,21 +258,12 @@ class TelegramAdapter(BaseMessenger):
                 tools_called=llm_engine.last_tools_called,
             )
 
-            # Send text reply (with markdown fallback)
+            # Send text reply (with markdown fallback) - responds in text only
             voice_caption = f"🎙️ *Heard*: \"{transcribed_text}\"\n\n{reply}"
             try:
                 await update.message.reply_text(voice_caption, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(f"🎙️ Heard: \"{transcribed_text}\"\n\n{reply}")
-
-            # Also generate voice reply if TTS enabled
-            if settings.voice.tts_enabled:
-                await context.bot.send_chat_action(chat_id=chat_id, action="record_voice")
-                tts_path = await voice_processor.text_to_speech(reply)
-                if tts_path and os.path.exists(tts_path):
-                    with open(tts_path, "rb") as audio:
-                        await update.message.reply_voice(voice=audio)
-                    os.unlink(tts_path)
 
         finally:
             if os.path.exists(temp_path):

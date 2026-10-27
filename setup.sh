@@ -141,6 +141,25 @@ else
 fi
 echo -e "${GREEN}✓ Selected Backup Fallback Model: $BACKUP_MODEL${NC}"
 
+# Local Ollama LLM Fallback Setup
+echo -e "\n${BOLD}${CYAN}--- Local Ollama LLM Offline Fallback ---${NC}"
+echo -e "Enables offline & zero-quota fallback using local Gemma on Ollama."
+read -rp "Enable Local Ollama fallback? [Y/n] (default: Y): " OLLAMA_ENABLE_INPUT
+OLLAMA_ENABLE_INPUT=${OLLAMA_ENABLE_INPUT:-Y}
+if [[ "$OLLAMA_ENABLE_INPUT" =~ ^[Yy]$ ]]; then
+    LOCAL_LLM_ENABLED=true
+    read -rp "Enter Ollama Host URL (default: http://127.0.0.1:11434): " OLLAMA_HOST
+    OLLAMA_HOST=${OLLAMA_HOST:-"http://127.0.0.1:11434"}
+    read -rp "Enter Ollama Model Name (default: gemma2:2b): " OLLAMA_MODEL
+    OLLAMA_MODEL=${OLLAMA_MODEL:-"gemma2:2b"}
+    echo -e "${GREEN}✓ Local Ollama configured with model: $OLLAMA_MODEL at $OLLAMA_HOST${NC}"
+else
+    LOCAL_LLM_ENABLED=false
+    OLLAMA_HOST="http://127.0.0.1:11434"
+    OLLAMA_MODEL="gemma2:2b"
+    echo -e "${YELLOW}! Local Ollama fallback disabled.${NC}"
+fi
+
 # Messaging Platform Selection
 echo -e "\n${YELLOW}Which messaging platform(s) do you want to configure?${NC}"
 echo "1) Telegram only (Easiest & recommended for daily use)"
@@ -269,7 +288,8 @@ cat <<EOF > config.json
     "host": "0.0.0.0",
     "port": 8000,
     "timezone": "$USER_TZ",
-    "debug": true
+    "debug": true,
+    "log_discussions": true
   },
   "gemini": {
     "api_key": "$GEMINI_KEY",
@@ -278,13 +298,23 @@ cat <<EOF > config.json
     "temperature": 0.4,
     "max_output_tokens": 1024
   },
+  "local_llm": {
+    "enabled": $LOCAL_LLM_ENABLED,
+    "provider": "ollama",
+    "host": "$OLLAMA_HOST",
+    "model": "$OLLAMA_MODEL",
+    "fallback_on_error": true,
+    "timeout": 12.0
+  },
   "database": {
     "path": "tracky.db"
   },
   "memory": {
     "max_history_messages": 100,
     "max_history_hours": 48,
-    "memory_log_file": "memory.log"
+    "memory_log_file": "memory.log",
+    "log_discussions": true,
+    "discussion_log_file": "logs/discussions.log"
   },
   "telegram": {
     "enabled": $TELEGRAM_ENABLED,
@@ -306,7 +336,7 @@ cat <<EOF > config.json
   },
   "voice": {
     "stt_enabled": true,
-    "tts_enabled": true,
+    "tts_enabled": false,
     "tts_voice": "en-US-ChristopherNeural"
   },
   "guardrails": {

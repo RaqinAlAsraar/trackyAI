@@ -26,8 +26,8 @@ class AppConfig(BaseModel):
 
 class GeminiConfig(BaseModel):
     api_key: str = ""
-    primary_model: str = "models/gemini-3.1-flash-lite"
-    backup_model: str = "models/gemini-3.1-flash-lite-preview"
+    primary_model: str = "models/gemma-4-26b-a4b-it"
+    backup_model: str = "models/gemini-3.1-flash-lite"
     temperature: float = 0.4
     max_output_tokens: int = 1024
 
@@ -88,7 +88,7 @@ class WhatsAppConfig(BaseModel):
 
 class VoiceConfig(BaseModel):
     stt_enabled: bool = True
-    tts_enabled: bool = True
+    tts_enabled: bool = False
     tts_voice: str = "en-US-ChristopherNeural"
 
 
@@ -103,7 +103,7 @@ class LocalLLMConfig(BaseModel):
     host: str = "http://127.0.0.1:11434"
     model: str = "gemma2:2b"
     fallback_on_error: bool = True
-    timeout: float = 20.0
+    timeout: float = 12.0
 
 
 class Settings(BaseModel):

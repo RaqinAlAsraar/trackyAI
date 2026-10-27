@@ -34,10 +34,8 @@ from core.local_llm import local_llm_engine, offline_fallback_handler
 
 
 DEFAULT_MODELS_TO_TRY = [
-    "models/gemini-3.1-flash-lite",          # High daily quota (1500 RPD), fast & zero thinking delay
-    "models/gemini-3.1-flash-lite-preview",  # Lightning-fast fallback (~1.8s)
-    "models/gemini-3-flash-preview",
-    "models/gemini-3.6-flash",
+    "models/gemma-4-26b-a4b-it",
+    "models/gemini-3.1-flash-lite",
 ]
 
 
@@ -241,53 +239,74 @@ class LLMEngine:
         history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """
-        Processes user message through cascading model fallback with zero thinking delay.
+        Processes user message through optimized hierarchy:
+        1. Cloud Gemma 4 (primary: models/gemma-4-26b-a4b-it)
+        2. Immediate Local Ollama Gemma fallback on error (e.g. gemma2:2b)
+        3. Cloud Backup (models/gemini-3.1-flash-lite)
+        4. Deterministic Offline Rule Engine (zero-downtime)
         """
-        if not self.client:
-            return "Gemini API key is not configured. Please run ./setup.sh to set up your key."
-
         start_time = time.time()
         self.last_tools_called = []
         self.last_model_used = None
         self.last_duration = None
 
-        models_to_try = self._get_models_chain()
-        last_error = None
+        primary_model = settings.gemini.primary_model or "models/gemma-4-26b-a4b-it"
+        if not primary_model.startswith("models/"):
+            primary_model = f"models/{primary_model}"
 
-        for model_name in models_to_try:
+        backup_model = settings.gemini.backup_model or "models/gemini-3.1-flash-lite"
+        if not backup_model.startswith("models/"):
+            backup_model = f"models/{backup_model}"
+
+        # 1. Primary Model: Cloud Gemma 4
+        if self.client:
             try:
-                logger.info(f"Attempting response generation with model '{model_name}'...")
+                logger.info(f"Attempting response generation with primary model '{primary_model}'...")
                 response_text = await asyncio.wait_for(
-                    self._call_model(model_name, ctx, user_message, history),
-                    timeout=12.0,
+                    self._call_model(primary_model, ctx, user_message, history),
+                    timeout=7.0,
                 )
-                self.last_model_used = model_name
+                self.last_model_used = primary_model
                 self.last_duration = round(time.time() - start_time, 2)
                 return response_text
-            except asyncio.TimeoutError:
-                last_error = f"Model '{model_name}' timed out after 12.0 seconds"
-                logger.warning(f"{last_error}. Switching immediately to fallback...")
             except Exception as e:
-                last_error = e
-                logger.warning(f"Model '{model_name}' failed with error: {e}. Switching to fallback...")
+                logger.warning(
+                    f"Primary model '{primary_model}' failed or timed out: {e}. "
+                    f"Switching immediately to local Ollama fallback..."
+                )
 
-        logger.warning(f"All cloud Gemini models exhausted or unavailable (last error: {last_error}). Triggering offline fallback...")
-
-        # 1. Attempt Local Gemma LLM via Ollama if enabled
+        # 2. Immediate Local Ollama Gemma Fallback
         if settings.local_llm.enabled and settings.local_llm.fallback_on_error:
             try:
-                logger.info(f"Attempting Local Gemma LLM fallback with '{settings.local_llm.model}'...")
-                local_response = await local_llm_engine.generate_response(ctx, user_message, history)
-                if local_response:
-                    self.last_model_used = f"local:{settings.local_llm.model}"
-                    self.last_duration = round(time.time() - start_time, 2)
-                    return local_response
+                if await local_llm_engine.is_available():
+                    logger.info(f"Attempting immediate Local Gemma LLM fallback with '{settings.local_llm.model}'...")
+                    local_response = await local_llm_engine.generate_response(ctx, user_message, history)
+                    if local_response:
+                        self.last_model_used = f"local:{settings.local_llm.model}"
+                        self.last_duration = round(time.time() - start_time, 2)
+                        return local_response
+                else:
+                    logger.info("Local Ollama server is not running (circuit breaker checked in <0.6s).")
             except Exception as e:
-                logger.warning(f"Local LLM fallback attempt failed: {e}")
+                logger.warning(f"Local LLM fallback failed: {e}")
 
-        # 2. Execute deterministic offline fallback handler (reminders, tasks, schedules)
+        # 3. Secondary Cloud Backup Model (e.g. gemini-3.1-flash-lite)
+        if self.client and backup_model != primary_model:
+            try:
+                logger.info(f"Attempting cloud backup model '{backup_model}'...")
+                response_text = await asyncio.wait_for(
+                    self._call_model(backup_model, ctx, user_message, history),
+                    timeout=5.0,
+                )
+                self.last_model_used = backup_model
+                self.last_duration = round(time.time() - start_time, 2)
+                return response_text
+            except Exception as e:
+                logger.warning(f"Backup cloud model '{backup_model}' failed: {e}")
+
+        # 4. Deterministic Offline Fallback Handler (tasks, reminders, calendar via SQLite)
         try:
-            logger.info("Local LLM server unavailable. Activating intelligent offline fallback handler...")
+            logger.info("Activating intelligent offline fallback handler...")
             fallback_response = await offline_fallback_handler(ctx, user_message)
             self.last_model_used = "offline:rule_engine"
             self.last_duration = round(time.time() - start_time, 2)
@@ -297,8 +316,8 @@ class LLMEngine:
 
         self.last_duration = round(time.time() - start_time, 2)
         return (
-            f"⚠️ I'm having trouble connecting to both cloud and local AI brains right now. "
-            f"Please check your network connection or run 'ollama run gemma2:2b' for offline AI."
+            "⚠️ I'm having trouble connecting to AI services right now. "
+            "Please check your internet connection or run 'ollama run gemma2:2b' for offline AI."
         )
 
     async def _call_model(
@@ -318,17 +337,17 @@ class LLMEngine:
             "system_instruction": system_instruction,
             "temperature": settings.gemini.temperature,
             "max_output_tokens": settings.gemini.max_output_tokens,
+            "tools": [{"function_declarations": get_genai_tools()}],
         }
 
-        # Avoid thinking mode to eliminate latency and delays on models that support it
+        # Avoid thinking mode on Gemini models to eliminate latency
         if "gemini" in model_name.lower():
             cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-            cfg_kwargs["tools"] = [{"function_declarations": get_genai_tools()}]
 
         # Prepare chat history
         initial_history = []
         if history:
-            for item in history:
+            for item in history[-10:]:
                 role = "user" if item["role"] == "user" else "model"
                 initial_history.append(types.Content(role=role, parts=[types.Part.from_text(text=item["content"])]))
 
@@ -338,7 +357,9 @@ class LLMEngine:
             history=initial_history,
         )
 
-        response = await asyncio.wait_for(chat.send_message(user_message), timeout=6.0)
+        response = await asyncio.wait_for(chat.send_message(user_message), timeout=5.0)
+
+        tool_confirmations: List[str] = []
 
         # Handle tool calling loops (up to 5 turns)
         for _ in range(5):
@@ -357,6 +378,10 @@ class LLMEngine:
                 result = await execute_tool_call(ctx, fn_name, fn_args)
                 logger.info(f"Tool {fn_name} returned: {result}")
 
+                # Save human confirmation message to prevent duplicate tool execution
+                if isinstance(result, dict) and result.get("message"):
+                    tool_confirmations.append(result["message"])
+
                 tool_responses.append(
                     types.Part.from_function_response(
                         name=fn_name,
@@ -365,7 +390,14 @@ class LLMEngine:
                 )
 
             # Send tool execution results back to LLM
-            response = await asyncio.wait_for(chat.send_message(tool_responses), timeout=6.0)
+            try:
+                response = await asyncio.wait_for(chat.send_message(tool_responses), timeout=5.0)
+            except Exception as e:
+                logger.warning(f"Failed to get follow-up confirmation from '{model_name}' after tool execution: {e}")
+                # Tools already completed their database modifications; return confirmation directly
+                if tool_confirmations:
+                    return "\n\n".join(tool_confirmations)
+                return "✅ I've processed and scheduled your request!"
 
         return response.text or "I've handled that for you!"
 

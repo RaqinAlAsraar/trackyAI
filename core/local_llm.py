@@ -38,18 +38,28 @@ from core.tools import (
 
 
 class LocalLLMEngine:
-    def __init__(self):
-        self.host = settings.local_llm.host.rstrip("/")
-        self.model = settings.local_llm.model
-        self.enabled = settings.local_llm.enabled
-        self.timeout = settings.local_llm.timeout
+    @property
+    def host(self) -> str:
+        return settings.local_llm.host.rstrip("/")
+
+    @property
+    def model(self) -> str:
+        return settings.local_llm.model
+
+    @property
+    def enabled(self) -> bool:
+        return settings.local_llm.enabled
+
+    @property
+    def timeout(self) -> float:
+        return settings.local_llm.timeout
 
     async def is_available(self) -> bool:
-        """Fast check to verify if the local LLM server (e.g. Ollama) is running."""
+        """Fast check (0.6s) to verify if the local Ollama LLM server is running."""
         if not self.enabled:
             return False
         try:
-            async with httpx.AsyncClient(timeout=1.2) as client:
+            async with httpx.AsyncClient(timeout=0.6) as client:
                 res = await client.get(f"{self.host}/api/tags")
                 return res.status_code == 200
         except Exception:
