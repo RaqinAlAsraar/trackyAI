@@ -30,7 +30,7 @@ from google.genai import types
 from core.logger import logger
 from core.config import settings
 from core.tools import ToolContext, execute_tool_call
-from core.local_llm import local_llm_engine, offline_fallback_handler
+from core.local_llm import local_llm_engine, offline_fallback_handler, format_iso_to_local
 
 
 DEFAULT_MODELS_TO_TRY = [
@@ -379,9 +379,9 @@ class LLMEngine:
                 result = await execute_tool_call(ctx, fn_name, fn_args)
                 logger.info(f"Tool {fn_name} returned: {result}")
 
-                # Save human confirmation message to prevent duplicate tool execution
-                if isinstance(result, dict) and result.get("message"):
-                    tool_confirmations.append(result["message"])
+                # Format human confirmation message (including listings)
+                summary = format_tool_result_summary(fn_name, result, ctx.timezone_name, ctx.user_name or settings.app.user_name)
+                tool_confirmations.append(summary)
 
                 tool_responses.append(
                     types.Part.from_function_response(
@@ -390,17 +390,60 @@ class LLMEngine:
                     )
                 )
 
-            # Send tool execution results back to LLM
+            # Send tool execution results back to LLM for final natural phrasing
             try:
-                response = await asyncio.wait_for(chat.send_message(tool_responses), timeout=5.0)
+                step2_timeout = 14.0 if "gemma" in model_name.lower() else 8.0
+                response = await asyncio.wait_for(chat.send_message(tool_responses), timeout=step2_timeout)
             except Exception as e:
-                logger.warning(f"Failed to get follow-up confirmation from '{model_name}' after tool execution: {e}")
-                # Tools already completed their database modifications; return confirmation directly
+                logger.warning(f"Failed to get follow-up confirmation from '{model_name}' after tool execution: {type(e).__name__}: {e}")
+                # Tools already completed in DB; return rich formatted tool summary directly
                 if tool_confirmations:
                     return "\n\n".join(tool_confirmations)
-                return "✅ I've processed and scheduled your request!"
+                return "✅ Request processed successfully."
 
-        return response.text or "I've handled that for you!"
+        return response.text or ("\n\n".join(tool_confirmations) if tool_confirmations else "I've handled that for you!")
+
+
+def format_tool_result_summary(fn_name: str, result: Any, tz_name: str = "UTC", user_name: str = "") -> str:
+    """Formats raw tool results into clean, beautiful human-readable text."""
+    user_disp = user_name if user_name else "Friend"
+    if not isinstance(result, dict):
+        return str(result)
+
+    if fn_name == "list_reminders":
+        reminders = result.get("reminders", [])
+        if not reminders:
+            return f"🔔 You have no pending reminders right now, {user_disp}!"
+        lines = [f"🔔 **Your Active Reminders** ({len(reminders)}):"]
+        for r in reminders:
+            t_str = format_iso_to_local(r.get("remind_at", ""), tz_name)
+            lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}`")
+        return "\n\n".join(lines)
+
+    if fn_name == "list_tasks":
+        tasks = result.get("tasks", [])
+        if not tasks:
+            return f"📋 You have no pending tasks right now, {user_disp}! Great job! 🎉"
+        lines = [f"📋 **Your Active Tasks** ({len(tasks)}):"]
+        for t in tasks:
+            prio = f" [{t['priority'].upper()}]" if t.get("priority") else ""
+            lines.append(f"• **#{t['id']}**: {t['title']}{prio}")
+        return "\n\n".join(lines)
+
+    if fn_name == "list_events":
+        events = result.get("events", [])
+        if not events:
+            return f"📅 Your calendar is clear, {user_disp}! No upcoming events scheduled."
+        lines = [f"📅 **Your Upcoming Events** ({len(events)}):"]
+        for e in events:
+            t_str = format_iso_to_local(e.get("start_time", ""), tz_name)
+            lines.append(f"• **#{e['id']}**: {e['title']} — `{t_str}`")
+        return "\n\n".join(lines)
+
+    if result.get("message"):
+        return result["message"]
+
+    return "✅ Request processed successfully."
 
 
 llm_engine = LLMEngine()
