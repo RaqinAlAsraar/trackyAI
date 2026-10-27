@@ -205,7 +205,7 @@ class TelegramAdapter(BaseMessenger):
         # Show typing indicator
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
-        user_name = (update.effective_user.first_name if update.effective_user else None) or settings.app.user_name
+        user_name = settings.app.user_name or (update.effective_user.first_name if update.effective_user else "Friend")
         ctx = ToolContext(
             user_id=user_id,
             platform="telegram",
@@ -263,7 +263,7 @@ class TelegramAdapter(BaseMessenger):
                 return
 
             # Process transcribed text through LLM
-            user_name = (update.effective_user.first_name if update.effective_user else None) or settings.app.user_name
+            user_name = settings.app.user_name or (update.effective_user.first_name if update.effective_user else "Friend")
             ctx = ToolContext(
                 user_id=user_id,
                 platform="telegram",
