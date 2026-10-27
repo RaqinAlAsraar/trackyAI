@@ -402,6 +402,74 @@ async def update_reminder_time(reminder_id: int, user_id: str, new_remind_at: st
         return cursor.rowcount > 0
 
 
+async def update_reminder_text(reminder_id: int, user_id: str, new_text: str) -> bool:
+    """Updates the text/title of an existing reminder."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "UPDATE reminders SET reminder_text = ? WHERE id = ? AND user_id = ?",
+            (new_text, reminder_id, user_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def update_task_title(task_id: int, user_id: str, new_title: str) -> bool:
+    """Updates the title of an existing task."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "UPDATE tasks SET title = ? WHERE id = ? AND user_id = ?",
+            (new_title, task_id, user_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def delete_tasks_by_date(user_id: str, date_str: str) -> int:
+    """Deletes all tasks for a specific due_date."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "DELETE FROM tasks WHERE user_id = ? AND due_date = ?",
+            (user_id, date_str),
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def delete_past_tasks(user_id: str, current_date_str: str) -> int:
+    """Deletes past/outdated tasks where due_date < current_date_str, created_at < current_date_str, or status = 'completed'."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM tasks
+            WHERE user_id = ? AND (
+                (due_date IS NOT NULL AND due_date < ?)
+                OR (due_date IS NULL AND substr(created_at, 1, 10) < ?)
+                OR status = 'completed'
+            )
+            """,
+            (user_id, current_date_str, current_date_str),
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def get_all_reminders(user_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retrieves reminders for a user, optionally filtered by status."""
+    async with get_db() as db:
+        if status:
+            cursor = await db.execute(
+                "SELECT * FROM reminders WHERE user_id = ? AND status = ? ORDER BY remind_at ASC",
+                (user_id, status),
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM reminders WHERE user_id = ? ORDER BY remind_at ASC",
+                (user_id,),
+            )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
 async def complete_tasks_by_keywords(user_id: str, keywords: List[str]) -> List[Dict[str, Any]]:
     """Finds pending tasks matching given keywords and marks them completed."""
     active_tasks = await get_tasks(user_id, status="pending")

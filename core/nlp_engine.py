@@ -300,6 +300,214 @@ def split_items_list(text: str) -> List[str]:
     return items
 
 
+async def render_reminders_by_scope(ctx: ToolContext, scope: str, user_display: str) -> str:
+    """Renders reminders filtered by scope: today, tomorrow, week, month, all."""
+    user_tz = get_user_tz(ctx.timezone_name)
+    now_local = datetime.now(user_tz)
+    today_date = now_local.date()
+    tomorrow_date = today_date + timedelta(days=1)
+    week_end_date = today_date + timedelta(days=7)
+    month_end_date = today_date + timedelta(days=30)
+
+    res = await handle_list_reminders(ctx)
+    pending_reminders = res.get("reminders", [])
+
+    if scope == "today":
+        filtered = []
+        for r in pending_reminders:
+            try:
+                rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
+                if rdt.date() == today_date:
+                    filtered.append(r)
+            except Exception:
+                pass
+        
+        if not filtered:
+            # Check if any reminders triggered today
+            all_rems = await db.get_all_reminders(ctx.user_id)
+            today_triggered = []
+            for r in all_rems:
+                if r.get("status") == "triggered":
+                    try:
+                        rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
+                        if rdt.date() == today_date:
+                            today_triggered.append(r)
+                    except Exception:
+                        pass
+            if today_triggered:
+                lines = [f"🔔 **Today's Reminders for you, {user_display}:**"]
+                for r in today_triggered:
+                    t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
+                    lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}` *(Triggered ✅)*")
+                lines.append("\n*No more pending reminders for today!*")
+                return "\n\n".join(lines)
+            return f"🔔 You have no reminders scheduled for today, {user_display}! Your schedule is clear."
+        
+        lines = [f"🔔 **Today's Active Reminders** ({len(filtered)}):"]
+        for r in filtered:
+            t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
+            lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}`")
+        return "\n\n".join(lines)
+
+    elif scope == "tomorrow":
+        filtered = []
+        for r in pending_reminders:
+            try:
+                rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
+                if rdt.date() == tomorrow_date:
+                    filtered.append(r)
+            except Exception:
+                pass
+        if not filtered:
+            return f"🔔 No reminders scheduled for tomorrow, {user_display}! Tomorrow is open."
+        lines = [f"🔔 **Tomorrow's Active Reminders** ({len(filtered)}):"]
+        for r in filtered:
+            t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
+            lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}`")
+        return "\n\n".join(lines)
+
+    elif scope == "week":
+        filtered = []
+        for r in pending_reminders:
+            try:
+                rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
+                if today_date <= rdt.date() <= week_end_date:
+                    filtered.append(r)
+            except Exception:
+                pass
+        if not filtered:
+            return f"🔔 No reminders scheduled for the upcoming week, {user_display}!"
+        lines = [f"🔔 **Upcoming Week's Reminders for you, {user_display}:** ({len(filtered)})"]
+        for r in filtered:
+            t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
+            lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}`")
+        return "\n\n".join(lines)
+
+    elif scope == "month":
+        filtered = []
+        for r in pending_reminders:
+            try:
+                rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
+                if today_date <= rdt.date() <= month_end_date:
+                    filtered.append(r)
+            except Exception:
+                pass
+        if not filtered:
+            return f"🔔 No reminders scheduled for this month, {user_display}!"
+        lines = [f"🔔 **This Month's Reminders for you, {user_display}:** ({len(filtered)})"]
+        for r in filtered:
+            t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
+            lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}`")
+        return "\n\n".join(lines)
+
+    else:
+        if not pending_reminders:
+            return f"🔔 You have no pending reminders or timers scheduled, {user_display}!"
+        lines = [f"🔔 **Your Active Timers & Reminders** ({len(pending_reminders)}):"]
+        for r in pending_reminders:
+            t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
+            lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}`")
+        return "\n\n".join(lines)
+
+
+async def render_tasks_by_scope(ctx: ToolContext, scope: str, user_display: str, target_date_str: Optional[str] = None) -> str:
+    """Renders tasks grouped and filtered by scope: today, tomorrow, week, month, or specific date."""
+    user_tz = get_user_tz(ctx.timezone_name)
+    now_local = datetime.now(user_tz)
+    today_date = now_local.date()
+    today_str = today_date.isoformat()
+    tomorrow_str = (today_date + timedelta(days=1)).isoformat()
+    week_end = today_date + timedelta(days=7)
+    month_end = today_date + timedelta(days=30)
+
+    all_tasks = await db.get_tasks(ctx.user_id, status="pending")
+    if not all_tasks:
+        return f"📋 You have no active tasks right now, {user_display}! You're completely up to date! 🎉"
+
+    if scope == "today":
+        filtered = [t for t in all_tasks if not t.get("due_date") or t.get("due_date") == today_str]
+        if not filtered:
+            return f"📋 No tasks scheduled for today, {user_display}! Today is open."
+        lines = [f"📋 **Today's Active Tasks** ({len(filtered)}):"]
+        for t in filtered:
+            prio = f" [{t['priority'].upper()}]" if t.get("priority") and t["priority"] != "normal" else ""
+            lines.append(f"• **#{t['id']}**: {t['title']}{prio}")
+        return "\n\n".join(lines)
+
+    elif scope == "tomorrow":
+        filtered = [t for t in all_tasks if t.get("due_date") == tomorrow_str]
+        if not filtered:
+            return f"📋 No tasks scheduled for tomorrow, {user_display}!"
+        lines = [f"📋 **Tomorrow's Active Tasks** ({len(filtered)}):"]
+        for t in filtered:
+            prio = f" [{t['priority'].upper()}]" if t.get("priority") and t["priority"] != "normal" else ""
+            lines.append(f"• **#{t['id']}**: {t['title']}{prio}")
+        return "\n\n".join(lines)
+
+    elif scope in ["week", "month", "all"]:
+        groups: Dict[str, List[Dict[str, Any]]] = {}
+        no_date = []
+        for t in all_tasks:
+            d = t.get("due_date")
+            if d:
+                try:
+                    td = datetime.fromisoformat(d).date()
+                    if scope == "week" and not (today_date <= td <= week_end):
+                        continue
+                    if scope == "month" and not (today_date <= td <= month_end):
+                        continue
+                except Exception:
+                    pass
+                groups.setdefault(d, []).append(t)
+            else:
+                if scope == "all":
+                    no_date.append(t)
+                elif scope == "week":
+                    groups.setdefault(today_str, []).append(t)
+
+        if not groups and not no_date:
+            time_name = "this week" if scope == "week" else ("this month" if scope == "month" else "")
+            return f"📋 No tasks found {time_name}, {user_display}!"
+
+        header = "Weekly Task List" if scope == "week" else ("Monthly Task List" if scope == "month" else "All Active Tasks")
+        lines = [f"📋 **{header} for you, {user_display}!**"]
+
+        for d_str in sorted(groups.keys()):
+            try:
+                d_obj = datetime.fromisoformat(d_str).date()
+                if d_obj == today_date:
+                    day_label = f"Today ({d_obj.strftime('%b %d')})"
+                elif d_obj == today_date + timedelta(days=1):
+                    day_label = f"Tomorrow ({d_obj.strftime('%b %d')})"
+                else:
+                    day_label = d_obj.strftime("%A, %b %d")
+            except Exception:
+                day_label = d_str
+            
+            lines.append(f"\n📅 **{day_label}**:")
+            for t in groups[d_str]:
+                prio = f" [{t['priority'].upper()}]" if t.get("priority") and t["priority"] != "normal" else ""
+                lines.append(f"• **#{t['id']}**: {t['title']}{prio}")
+
+        if no_date:
+            lines.append(f"\n📌 **General / Anytime**:")
+            for t in no_date:
+                lines.append(f"• **#{t['id']}**: {t['title']}")
+
+        return "\n".join(lines)
+
+    elif target_date_str:
+        filtered = [t for t in all_tasks if t.get("due_date") == target_date_str]
+        if not filtered:
+            return f"📋 No tasks scheduled for {target_date_str}, {user_display}!"
+        lines = [f"📋 **Tasks for {target_date_str}** ({len(filtered)}):"]
+        for t in filtered:
+            lines.append(f"• **#{t['id']}**: {t['title']}")
+        return "\n\n".join(lines)
+
+    return f"📋 You have {len(all_tasks)} active tasks."
+
+
 class SmartNLPEngine:
     async def process_user_intent(self, ctx: ToolContext, user_message: str) -> Optional[str]:
         """
@@ -329,7 +537,34 @@ class SmartNLPEngine:
                 return f"✨ Your reminder list is already tidy, {user_display}! No inactive or past reminders found."
 
         # -------------------------------------------------------------
-        # 2. ACTION: Compound Elimination + New Reminder in One Sentence
+        # 2. ACTION: Delete Previous / Outdated Task Lists
+        # e.g. "delete previous tasklists", "delete old tasklists", "clear past tasks", "delete yesterday's task list"
+        # -------------------------------------------------------------
+        if any(p in msg_lower for p in ["previous task", "old task", "past task", "yesterday's task", "outdated task"]) and any(a in msg_lower for a in ["delete", "remove", "clear", "clean", "purge"]):
+            user_tz = get_user_tz(ctx.timezone_name)
+            today_str = datetime.now(user_tz).date().isoformat()
+            count = await db.delete_past_tasks(ctx.user_id, today_str)
+            if count > 0:
+                return f"🧹 Cleaned up **{count} previous/completed task{'s' if count != 1 else ''}** for you, {user_display}! Active lists are now focused."
+            return f"✨ No outdated task lists found, {user_display}! All your active tasks are current."
+
+        # -------------------------------------------------------------
+        # 3. ACTION: Delete Tasklist for Specific Date
+        # e.g. "delete tasklist for 28 october", "clear tasks for tomorrow"
+        # -------------------------------------------------------------
+        if any(a in msg_lower for a in ["delete", "clear", "remove"]) and any(t in msg_lower for t in ["tasklist for", "tasks for", "task list for", "tasks on"]):
+            parsed_d = parse_target_datetime(clean_msg, ctx.timezone_name)
+            if parsed_d:
+                d_obj = parsed_d[0].date()
+                d_iso = d_obj.isoformat()
+                d_nice = d_obj.strftime("%b %d")
+                count = await db.delete_tasks_by_date(ctx.user_id, d_iso)
+                if count > 0:
+                    return f"🗑️ Deleted **{count} task{'s' if count != 1 else ''}** scheduled for {d_nice}, {user_display}."
+                return f"✨ No tasks were found scheduled for {d_nice}, {user_display}."
+
+        # -------------------------------------------------------------
+        # 4. ACTION: Compound Elimination + New Reminder in One Sentence
         # e.g. "Eliminate the reminder 62, add a new reminder to check the project after 1:15 p.m."
         # -------------------------------------------------------------
         compound_del_add = re.search(
@@ -356,7 +591,7 @@ class SmartNLPEngine:
                 )
 
         # -------------------------------------------------------------
-        # 3. ACTION: Reschedule / Change Existing Reminder Time
+        # 5. ACTION: Reschedule / Change Existing Reminder Time
         # Explicit ID: "Change time for #62 for today 1:15", "reschedule reminder 62 to 1:15 pm"
         # Contextual: "Change it's Timing to 6 am", "change its time to 6 am", "change timing to 6 am"
         # -------------------------------------------------------------
@@ -399,7 +634,51 @@ class SmartNLPEngine:
                 return f"⚠️ Reminder #{r_id} was not found in your schedule."
 
         # -------------------------------------------------------------
-        # 4. ACTION: Multi-ID Deletion (e.g. "Remove 53, 52", "Delete #64", "remove 62")
+        # 6. ACTION: Edit / Rename Task or Reminder Title
+        # e.g. "Rename reminder #67 to Team Standup", "Rename task #19 to study python"
+        # -------------------------------------------------------------
+        ren_rem = re.search(r"(?:rename|change\s+title\s+of)\s+reminder\s+#?(\d+)\s+to\s+(.+)$", clean_msg, flags=re.IGNORECASE)
+        if ren_rem:
+            r_id = int(ren_rem.group(1))
+            new_text = ren_rem.group(2).strip()
+            updated = await db.update_reminder_text(r_id, ctx.user_id, new_text)
+            if updated:
+                return f"✏️ **Reminder #{r_id} Renamed, {user_display}!** New title: **{new_text}**"
+            return f"⚠️ Reminder #{r_id} was not found in your schedule."
+
+        ren_task = re.search(r"(?:rename|change)\s+task\s+#?(\d+)\s+to\s+(.+)$", clean_msg, flags=re.IGNORECASE)
+        if ren_task:
+            t_id = int(ren_task.group(1))
+            new_text = ren_task.group(2).strip()
+            updated = await db.update_task_title(t_id, ctx.user_id, new_text)
+            if updated:
+                return f"✏️ **Task #{t_id} Updated, {user_display}!** New title: **{new_text}**"
+            return f"⚠️ Task #{t_id} was not found in your list."
+
+        # -------------------------------------------------------------
+        # 7. ACTION: Contextual Scope Follow-Up
+        # e.g. "for the week", "for today", "for todat", "weekly", "monthly", "this week"
+        # -------------------------------------------------------------
+        pure_scope_m = msg_lower in [
+            "for the week", "for today", "for todat", "for tomorrow", "weekly", "monthly",
+            "this week", "this month", "upcoming week", "upcoming month", "for this week",
+            "for this month", "for the month", "for upcoming week"
+        ]
+        if pure_scope_m:
+            scope = "week" if any(w in msg_lower for w in ["week", "weekly"]) else (
+                "month" if any(m in msg_lower for m in ["month", "monthly"]) else (
+                    "tomorrow" if "tomorrow" in msg_lower else "today"
+                )
+            )
+            recent_chats = await db.get_recent_chat_history(ctx.user_id, limit=4)
+            last_text = " ".join([c["content"].lower() for c in recent_chats])
+            if any(k in last_text for k in ["task", "tasks", "todo", "todos", "tasklist"]):
+                return await render_tasks_by_scope(ctx, scope, user_display)
+            else:
+                return await render_reminders_by_scope(ctx, scope, user_display)
+
+        # -------------------------------------------------------------
+        # 8. ACTION: Multi-ID Deletion (e.g. "Remove 53, 52", "Delete #64", "remove 62")
         # -------------------------------------------------------------
         id_delete_match = re.search(
             r"^(?:please\s+)?(?:delete|remove|cancel|eliminate)\s+(?:the\s+)?(?:reminders?|tasks?|items?)?\s*#?(\d+(?:[\s,]+(?:and\s+)?#?\d+)*)(?:\s+[a-z])?$",
@@ -417,7 +696,7 @@ class SmartNLPEngine:
                 return f"⚠️ None of the requested IDs ({', '.join(f'#{i}' for i in raw_ids)}) were found in your active items."
 
         # -------------------------------------------------------------
-        # 5. ACTION: Delete existing task list and create new one
+        # 9. ACTION: Delete existing task list and create new one
         # e.g. "Delete this and create new tasklist, add exam prep, coding and hacking in it"
         # -------------------------------------------------------------
         if ("delete this" in msg_lower or "clear task" in msg_lower or "replace task" in msg_lower) and any(w in msg_lower for w in ["create", "new", "add"]):
@@ -433,7 +712,7 @@ class SmartNLPEngine:
             return f"🗑️ Cleared your active task list, {user_display}! What would you like to add to your fresh list?"
 
         # -------------------------------------------------------------
-        # 6. ACTION: Fuzzy Task Completion by Keyword / Name
+        # 10. ACTION: Fuzzy Task Completion by Keyword / Name
         # e.g. "Hacki and coding are done", "namaz is done", "coding is finished"
         # -------------------------------------------------------------
         done_m = re.search(r"^(.*?)\s+(?:are|is)\s+(?:done|finished|completed)$", clean_msg, flags=re.IGNORECASE)
@@ -450,7 +729,7 @@ class SmartNLPEngine:
                     return "\n".join(lines)
 
         # -------------------------------------------------------------
-        # 7. ACTION: Feedback Handling - Remove Completed Tasks
+        # 11. ACTION: Feedback Handling - Remove Completed Tasks
         # e.g. "You were supposed to remove these tasks when they are done", "clear completed tasks"
         # -------------------------------------------------------------
         if any(ph in msg_lower for ph in ["supposed to remove", "clear completed", "remove completed", "delete completed", "clean completed"]):
@@ -460,7 +739,7 @@ class SmartNLPEngine:
             return f"✨ No completed tasks were pending removal, {user_display}! Your active list is up to date."
 
         # -------------------------------------------------------------
-        # 8. ACTION: Create Task List with Multiple Items
+        # 12. ACTION: Create Task List with Multiple Items (Optionally with Date)
         # e.g. "Create today's task list. Add tennis ball, namaz, and exam study in the tasks."
         # e.g. "Create tasklist for 28 october, add coding, shopping"
         # -------------------------------------------------------------
@@ -469,9 +748,11 @@ class SmartNLPEngine:
             parsed_dt = parse_target_datetime(clean_msg, ctx.timezone_name)
             due_date_str = None
             date_label = ""
-            if parsed_dt and any(m in msg_lower for m in list(MONTHS_MAP.keys()) + ["tomorrow"]):
+            if parsed_dt and any(m in msg_lower for m in list(MONTHS_MAP.keys()) + ["tomorrow", "today", "todat", "to-day"]):
                 due_date_str = parsed_dt[0].date().isoformat()
-                date_label = f" for {parsed_dt[0].strftime('%b %d')}"
+                date_label = " for Today" if any(t in msg_lower for t in ["today", "todat", "to-day"]) else (
+                    " for Tomorrow" if "tomorrow" in msg_lower else f" for {parsed_dt[0].strftime('%b %d')}"
+                )
 
             match_items = re.search(r"(?:add|create|tasks?[:\s]+)(.+)$", clean_msg, re.IGNORECASE)
             if match_items:
@@ -485,37 +766,40 @@ class SmartNLPEngine:
                     return "\n\n".join(lines)
 
         # -------------------------------------------------------------
-        # 9. QUERY: List Tasks / To-Do
-        # e.g. "today's task list", "Show today's tasklist", "Any todo list for today?", "show active tasks", "show again", "show tasklist"
+        # 13. QUERY: List Tasks / To-Do by Scope
+        # e.g. "today's task list", "Show today's tasklist", "weekly tasklist", "tasks for 28 october"
         # -------------------------------------------------------------
         is_list_tasks = (
             any(k in msg_lower for k in ["task", "tasks", "todo", "todos", "tasklist"])
             and not any(neg in msg_lower for neg in ["add", "create", "new", "delete", "cancel", "remove", "finish", "complete", "done"])
         ) or msg_lower in [
             "today's task list", "todays task list", "tasks", "my tasks", "active tasks", "show tasks", "show active tasks",
-            "any todo list for today?", "show today's tasklist", "show tasklist", "show task list", "show again"
+            "any todo list for today?", "show today's tasklist", "show tasklist", "show task list", "show again",
+            "weekly tasks", "weekly task list", "weekly tasklist", "show weekly tasklist", "tasks for this week"
         ]
 
         if is_list_tasks:
-            user_tz = get_user_tz(ctx.timezone_name)
-            now_local = datetime.now(user_tz)
-            today_str = now_local.date().isoformat()
+            target_date_str = None
+            date_m = re.search(r"(?:for|on)\s+(\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+|[a-z]+\s+\d{1,2}(?:st|nd|rd|th)?)", clean_msg, re.IGNORECASE)
+            if date_m:
+                parsed_d = parse_target_datetime(date_m.group(1), ctx.timezone_name)
+                if parsed_d:
+                    target_date_str = parsed_d[0].date().isoformat()
 
-            is_today_query = any(ph in msg_lower for ph in ["today", "today's", "todays", "any todo list for today?"])
-            filter_due = today_str if is_today_query else None
+            if target_date_str:
+                return await render_tasks_by_scope(ctx, "specific", user_display, target_date_str=target_date_str)
 
-            tasks = await db.get_tasks(ctx.user_id, status="pending", due_date=filter_due)
-            if not tasks:
-                return f"📋 You have no pending tasks right now, {user_display}! You're completely up to date! 🎉"
-            header = "Your Active Tasks for Today" if is_today_query else "Your Active Tasks"
-            lines = [f"📋 **{header}** ({len(tasks)}):"]
-            for t in tasks:
-                prio = f" [{t['priority'].upper()}]" if t.get("priority") and t["priority"] != "normal" else ""
-                lines.append(f"• **#{t['id']}**: {t['title']}{prio}")
-            return "\n\n".join(lines)
+            scope = "week" if any(w in msg_lower for w in ["week", "weekly"]) else (
+                "month" if any(m in msg_lower for m in ["month", "monthly"]) else (
+                    "tomorrow" if "tomorrow" in msg_lower else (
+                        "today" if any(t in msg_lower for t in ["today", "todat", "to-day", "any todo list for today?"]) else "all"
+                    )
+                )
+            )
+            return await render_tasks_by_scope(ctx, scope, user_display)
 
         # -------------------------------------------------------------
-        # 10. ACTION: Set Timer / Date Reminder
+        # 14. ACTION: Set Timer / Date Reminder
         # e.g. "I have exam after 15 days, set timer for it at 6:00 p.m. for 15 days."
         # e.g. "I have exam on 30 October. So set a reminder for that day at 6:00 a.m. morning."
         # -------------------------------------------------------------
@@ -550,8 +834,8 @@ class SmartNLPEngine:
                     return "\n\n".join(lines)
 
         # -------------------------------------------------------------
-        # 11. QUERY: List Reminders / Timers
-        # e.g. "show active reminders", "reminders list", "timers", "active timers", "Show today's reminders"
+        # 15. QUERY: List Reminders / Timers by Scope (Today, Tomorrow, Week, Month, All)
+        # e.g. "show active reminders for todat", "show me reminder for upcoming week", "reminders for this week"
         # -------------------------------------------------------------
         is_list_reminders = (
             any(w in msg_lower for w in ["reminder", "reminders", "timer", "timers"])
@@ -560,63 +844,28 @@ class SmartNLPEngine:
         ) or msg_lower in [
             "reminders", "my reminders", "active reminders", "show reminders", "show active reminders",
             "timers", "active timers", "show timers", "show today's reminders", "show only today reminders",
-            "show updated reminders"
+            "show updated reminders", "show me active reminders for today", "show me active reminders for todat",
+            "show me reminder for upcoming week", "reminders for this week", "weekly reminders", "monthly reminders"
         ]
 
         if is_list_reminders:
-            res = await handle_list_reminders(ctx)
-            reminders = res.get("reminders", [])
-
-            user_tz = get_user_tz(ctx.timezone_name)
-            now_local = datetime.now(user_tz)
-            only_today = any(ph in msg_lower for ph in ["today's", "today", "only today"])
-            only_tomorrow = "tomorrow" in msg_lower
-
-            if only_today:
-                filtered = []
-                for r in reminders:
-                    try:
-                        rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
-                        if rdt.date() == now_local.date():
-                            filtered.append(r)
-                    except Exception:
-                        pass
-                reminders = filtered
-                title_header = "Today's Active Reminders"
-            elif only_tomorrow:
-                filtered = []
-                tom_date = (now_local + timedelta(days=1)).date()
-                for r in reminders:
-                    try:
-                        rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
-                        if rdt.date() == tom_date:
-                            filtered.append(r)
-                    except Exception:
-                        pass
-                reminders = filtered
-                title_header = "Tomorrow's Active Reminders"
-            else:
-                title_header = "Active Timers & Reminders" if "timer" in msg_lower else "Active Reminders"
-
-            if not reminders:
-                noun = "timers or reminders" if "timer" in msg_lower else "reminders"
-                qual = " for today" if only_today else (" for tomorrow" if only_tomorrow else "")
-                return f"🔔 You have no pending {noun} scheduled{qual}, {user_display}! Your schedule is clear."
-
-            lines = [f"🔔 **Your {title_header}** ({len(reminders)}):"]
-            for r in reminders:
-                t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
-                lines.append(f"• **#{r['id']}**: {r['reminder_text']} — `{t_str}`")
-            return "\n\n".join(lines)
+            scope = "week" if any(w in msg_lower for w in ["week", "weekly"]) else (
+                "month" if any(m in msg_lower for m in ["month", "monthly"]) else (
+                    "tomorrow" if "tomorrow" in msg_lower else (
+                        "today" if any(t in msg_lower for t in ["today", "todat", "to-day"]) else "all"
+                    )
+                )
+            )
+            return await render_reminders_by_scope(ctx, scope, user_display)
 
         # -------------------------------------------------------------
-        # 12. FEEDBACK: Wrong reminder time
+        # 16. FEEDBACK: Wrong reminder time
         # -------------------------------------------------------------
         if msg_lower in ["wrong reminder time", "wrong time", "wrong reminder", "incorrect time"]:
             return f"⚠️ My apologies, {user_display}! Tell me which reminder to adjust (e.g. *\"Change time for #65 to 6:00 AM on 30 October\"*) and I'll update it right away."
 
         # -------------------------------------------------------------
-        # 13. ACTION: Complete Task by ID
+        # 17. ACTION: Complete Task by ID
         # e.g. "done 12", "complete task 12", "finished task #12"
         # -------------------------------------------------------------
         comp_m = re.search(r"^(?:mark\s+)?(?:done|complete|finished)\s*(?:task)?\s*#?(\d+)$", msg_lower)
@@ -628,7 +877,7 @@ class SmartNLPEngine:
             return f"⚠️ Task #{t_id} was not found in your list."
 
         # -------------------------------------------------------------
-        # 14. ACTION: Schedule Calendar Event
+        # 18. ACTION: Schedule Calendar Event
         # e.g. "Schedule meeting with mentor tomorrow at 4pm"
         # -------------------------------------------------------------
         if any(w in msg_lower for w in ["schedule", "appointment", "event", "calendar", "meeting"]) and any(w in msg_lower for w in ["at", "on", "tomorrow", "friday", "monday"]):
@@ -645,7 +894,7 @@ class SmartNLPEngine:
                 )
 
         # -------------------------------------------------------------
-        # 15. QUERY: Calendar & Schedule
+        # 19. QUERY: Calendar & Schedule
         # e.g. "What's on my schedule?", "calendar", "my events"
         # -------------------------------------------------------------
         if any(q in msg_lower for q in ["calendar", "my schedule", "what's on my schedule", "agenda", "upcoming events", "events"]) and not any(w in msg_lower for w in ["add", "schedule", "create"]):

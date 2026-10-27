@@ -213,3 +213,75 @@ async def test_recent_chat_edge_cases():
     assert "shopping" not in res_today_tasks
 
 
+@pytest.mark.asyncio
+async def test_scope_and_crud_features():
+    ctx = ToolContext(
+        user_id="nlp_scope_user",
+        platform="telegram",
+        chat_id="7777",
+        timezone_name="Asia/Kolkata",
+        user_name="Ali Abbas",
+        assistant_name="Angel"
+    )
+
+    # 1. Create dated tasks for tomorrow
+    create_tom = await nlp_engine.process_user_intent(ctx, "Create tasklist for tomorrow, add review pr, write documentation")
+    assert create_tom is not None
+    assert "Added 2 Tasks" in create_tom
+
+    # 2. Query weekly task list (should show grouped dates)
+    week_tasks = await nlp_engine.process_user_intent(ctx, "Show weekly tasklist")
+    assert week_tasks is not None
+    assert "Weekly Task List" in week_tasks
+    assert "review pr" in week_tasks
+    assert "write documentation" in week_tasks
+
+    # 3. Rename Task
+    # Find the task id
+    tasks = await db.get_tasks(ctx.user_id, status="pending")
+    pr_task = next(t for t in tasks if "review pr" in t["title"])
+    rename_res = await nlp_engine.process_user_intent(ctx, f"Rename task #{pr_task['id']} to review pull requests and merge")
+    assert rename_res is not None
+    assert "Task #" in rename_res and "review pull requests and merge" in rename_res
+
+    # 4. Rename Reminder
+    rem_id = await db.add_reminder(ctx.user_id, ctx.platform, ctx.chat_id, "quick call", "2026-10-29T10:00:00+00:00")
+    rename_rem_res = await nlp_engine.process_user_intent(ctx, f"Rename reminder #{rem_id} to Sync with architecture team")
+    assert rename_rem_res is not None
+    assert "Reminder #" in rename_rem_res and "Sync with architecture team" in rename_rem_res
+
+    # 5. Pure scope follow-up
+    # Save a chat indicating user asked about reminders
+    await db.add_chat_message(ctx.user_id, ctx.platform, "user", "Show me active reminders for today")
+    await db.add_chat_message(ctx.user_id, ctx.platform, "assistant", "You have no reminders for today")
+    followup_week = await nlp_engine.process_user_intent(ctx, "for the week")
+    assert followup_week is not None
+    assert "Reminders" in followup_week
+    assert "Sync with architecture team" in followup_week
+
+    # 6. Delete tasklist for a specific date
+    delete_date = await nlp_engine.process_user_intent(ctx, "delete tasks for tomorrow")
+    assert delete_date is not None
+    assert "Deleted" in delete_date
+
+    # Verify tasks for tomorrow are gone
+    remaining = await db.get_tasks(ctx.user_id, status="pending")
+    assert not any("write documentation" in t["title"] for t in remaining)
+
+    # 7. Delete previous tasklists
+    # Insert an outdated task from yesterday
+    async with db.get_db() as conn:
+        await conn.execute(
+            "INSERT INTO tasks (user_id, platform, title, due_date, created_at) VALUES (?, ?, ?, ?, ?)",
+            (ctx.user_id, ctx.platform, "old obsolete task", "2026-10-20", "2026-10-20T10:00:00+00:00")
+        )
+        await conn.commit()
+    del_past = await nlp_engine.process_user_intent(ctx, "delete previous tasklists as well which has no use now")
+    assert del_past is not None
+    assert "Cleaned up" in del_past
+    # Confirm it was removed from db
+    all_user_tasks = await db.get_tasks(ctx.user_id)
+    assert not any(t["title"] == "old obsolete task" for t in all_user_tasks)
+
+
+
