@@ -36,3 +36,22 @@ node_modules/
 whatsapp_bridge/node_modules/
 whatsapp_bridge/auth_info/
 
+# AI Agent & GSD
+.agent/
+.agents/
+.gemini/
+.gsd/
+.cursor/
+.cursorrules
+.cline/
+.windsurf/
+.claude/
+CLAUDE.md
+GSD-STYLE.md
+PROJECT_RULES.md
+adapters/CLAUDE.md
+adapters/GEMINI.md
+adapters/GPT_OSS.md
+scripts/validate-*
+
+
