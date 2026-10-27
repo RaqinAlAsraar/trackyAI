@@ -32,7 +32,7 @@ async def test_whatsapp_web_incoming_tasks():
         payload = {
             "sender": "919876543210@s.whatsapp.net",
             "phone": "919876543210",
-            "name": "Ali Abbas",
+            "name": "Test User",
             "text": "Create today's task list: prepare presentation, review code, test whatsapp",
         }
         res = await client.post("/webhook/whatsapp/web", json=payload)
@@ -58,7 +58,7 @@ async def test_whatsapp_web_incoming_reminders_and_reschedule():
         p1 = {
             "sender": "919876543210@s.whatsapp.net",
             "phone": "919876543210",
-            "name": "Ali Abbas",
+            "name": "Test User",
             "text": "I have exam on 30 October. So set a reminder for that day at 6:00 a.m. morning.",
         }
         res1 = await client.post("/webhook/whatsapp/web", json=p1)
@@ -71,7 +71,7 @@ async def test_whatsapp_web_incoming_reminders_and_reschedule():
         p2 = {
             "sender": "919876543210@s.whatsapp.net",
             "phone": "919876543210",
-            "name": "Ali Abbas",
+            "name": "Test User",
             "text": "Change it's Timing to 8 am",
         }
         res2 = await client.post("/webhook/whatsapp/web", json=p2)
@@ -89,7 +89,7 @@ async def test_whatsapp_unified_endpoint():
         payload = {
             "sender": "919876543210@s.whatsapp.net",
             "phone": "919876543210",
-            "name": "Ali Abbas",
+            "name": "Test User",
             "text": "Show today's tasklist",
         }
         res = await client.post("/webhook/whatsapp", json=payload)

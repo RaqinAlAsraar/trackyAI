@@ -41,17 +41,31 @@ async function connectToWhatsApp() {
     connectionStatus = 'connecting';
     console.log('\n[WhatsApp Bridge] Initializing WhatsApp Web Multi-Device connection...');
 
+    if (sock) {
+        try {
+            sock.ev.removeAllListeners();
+        } catch (e) {}
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`[WhatsApp Bridge] Using WA Web v${version.join('.')}, isLatest: ${isLatest}`);
+    let version = [2, 3000, 1019707846];
+    try {
+        const vInfo = await fetchLatestBaileysVersion();
+        if (vInfo && vInfo.version) version = vInfo.version;
+    } catch (e) {
+        console.log('[WhatsApp Bridge] Using fallback WA Web version');
+    }
 
     sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // Handled manually with qrcode-terminal
+        printQRInTerminal: false,
         auth: state,
-        browser: ['Tracky AI', 'Desktop', '1.0.0'],
+        browser: ['Tracky AI', 'Chrome', '1.0.0'],
         syncFullHistory: false,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 25000,
     });
 
     sock.ev.on('creds.update', saveCreds);

@@ -11,7 +11,7 @@ async def test_smart_nlp_multi_reminder():
         platform="telegram",
         chat_id="9999",
         timezone_name="Asia/Kolkata",
-        user_name="Ali Abbas",
+        user_name="Test User",
         assistant_name="Angel"
     )
     # Compound multi-action reminder
@@ -36,7 +36,7 @@ async def test_smart_nlp_multi_task_creation_and_listing():
         platform="telegram",
         chat_id="9999",
         timezone_name="Asia/Kolkata",
-        user_name="Ali Abbas",
+        user_name="Test User",
         assistant_name="Angel"
     )
     
@@ -79,7 +79,7 @@ async def test_smart_nlp_delete_by_ids_and_inactive():
         platform="telegram",
         chat_id="9999",
         timezone_name="Asia/Kolkata",
-        user_name="Ali Abbas",
+        user_name="Test User",
         assistant_name="Angel"
     )
     
@@ -107,7 +107,7 @@ async def test_chat_issues_full_workflow():
         platform="telegram",
         chat_id="9999",
         timezone_name="Asia/Kolkata",
-        user_name="Ali Abbas",
+        user_name="Test User",
         assistant_name="Angel"
     )
 
@@ -170,7 +170,7 @@ async def test_recent_chat_edge_cases():
         platform="telegram",
         chat_id="8888",
         timezone_name="Asia/Kolkata",
-        user_name="Ali Abbas",
+        user_name="Test User",
         assistant_name="Angel"
     )
 
@@ -220,7 +220,7 @@ async def test_scope_and_crud_features():
         platform="telegram",
         chat_id="7777",
         timezone_name="Asia/Kolkata",
-        user_name="Ali Abbas",
+        user_name="Test User",
         assistant_name="Angel"
     )
 

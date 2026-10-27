@@ -78,25 +78,28 @@ class WhatsAppAdapter(BaseMessenger):
             except Exception:
                 pass
 
-            if not bridge_running and getattr(settings.whatsapp, "web_session_auto_start", True):
-                bridge_dir = os.path.join(os.path.dirname(__file__), "..", "whatsapp_bridge")
-                bridge_script = os.path.join(bridge_dir, "bridge.js")
-                node_modules = os.path.join(bridge_dir, "node_modules")
+            if not bridge_running:
+                logger.info("💡 To connect your WhatsApp, start the bridge in a terminal: bash whatsapp_bridge/start.sh")
+                logger.info("   Scan the QR code with WhatsApp -> Linked Devices -> Link a Device.")
+                if getattr(settings.whatsapp, "web_session_auto_start", False):
+                    bridge_dir = os.path.join(os.path.dirname(__file__), "..", "whatsapp_bridge")
+                    bridge_script = os.path.join(bridge_dir, "bridge.js")
+                    node_modules = os.path.join(bridge_dir, "node_modules")
 
-                if os.path.exists(bridge_script) and os.path.exists(node_modules):
-                    try:
-                        logger.info("Spawning WhatsApp Web Session Bridge background process...")
-                        self.bridge_process = subprocess.Popen(
-                            ["node", "bridge.js"],
-                            cwd=bridge_dir,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                        logger.info("WhatsApp Web Session Bridge process launched.")
-                    except Exception as e:
-                        logger.warning(f"Could not auto-start WhatsApp Web Bridge process: {e}")
-                else:
-                    logger.info("WhatsApp bridge dependencies not installed yet. Run `bash whatsapp_bridge/start.sh` to link your session.")
+                    if os.path.exists(bridge_script) and os.path.exists(node_modules):
+                        try:
+                            log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
+                            os.makedirs(log_dir, exist_ok=True)
+                            log_file = open(os.path.join(log_dir, "whatsapp_bridge.log"), "a", encoding="utf-8")
+                            self.bridge_process = subprocess.Popen(
+                                ["node", "bridge.js"],
+                                cwd=bridge_dir,
+                                stdout=log_file,
+                                stderr=log_file,
+                            )
+                            logger.info(f"WhatsApp Web Bridge auto-started. View QR at: {self.bridge_url}/qr")
+                        except Exception as e:
+                            logger.warning(f"Could not auto-start WhatsApp Web Bridge process: {e}")
 
     async def stop(self) -> None:
         if self.bridge_process:

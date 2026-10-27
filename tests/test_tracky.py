@@ -302,7 +302,7 @@ async def test_smart_nlp_engine_multi_actions():
         platform="telegram",
         chat_id="99999",
         timezone_name="Asia/Kolkata",
-        user_name="Ali Abbas",
+        user_name="Test User",
         assistant_name="Angel",
     )
 
