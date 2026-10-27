@@ -18,13 +18,14 @@ if [ ! -d ".venv" ]; then
     exit $?
 fi
 
-# Auto-free port 8000 if occupied by previous instance
-PORT_PID=$(lsof -ti :8000 2>/dev/null || true)
+# Auto-free configured port if occupied by previous instance
+CONFIG_PORT=$(python3 -c "import json; print(json.load(open('config.json'))['app'].get('port', 8000))" 2>/dev/null || echo "8000")
+PORT_PID=$(lsof -ti :$CONFIG_PORT 2>/dev/null || true)
 if [ -n "$PORT_PID" ]; then
-    echo "Freeing port 8000 (stopping old process $PORT_PID)..."
-    kill -9 $PORT_PID 2>/dev/null || true
+    echo "Stopping previous Tracky instance on port $CONFIG_PORT (PID $PORT_PID)..."
+    kill -15 $PORT_PID 2>/dev/null || kill -9 $PORT_PID 2>/dev/null || true
     sleep 1
 fi
 
-echo "Starting Tracky AI..."
+echo "Starting Tracky AI on port $CONFIG_PORT..."
 exec .venv/bin/python app.py

@@ -401,7 +401,14 @@ class LLMEngine:
                     return "\n\n".join(tool_confirmations)
                 return "✅ Request processed successfully."
 
-        return response.text or ("\n\n".join(tool_confirmations) if tool_confirmations else "I've handled that for you!")
+        final_text = response.text.strip() if response.text else ""
+        listing_tools = {"list_reminders", "list_tasks", "list_events"}
+        if any(t in self.last_tools_called for t in listing_tools):
+            # If the model didn't actually list the items (e.g. gave a generic acknowledgment without items)
+            if not any(marker in final_text for marker in ["#", "•", "-", "*", "1.", "2."]):
+                return "\n\n".join(tool_confirmations)
+
+        return final_text or ("\n\n".join(tool_confirmations) if tool_confirmations else "I've handled that for you!")
 
 
 def format_tool_result_summary(fn_name: str, result: Any, tz_name: str = "UTC", user_name: str = "") -> str:

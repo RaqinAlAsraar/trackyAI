@@ -230,6 +230,7 @@ async def execute_deterministic_intent(ctx: ToolContext, user_message: str) -> O
         if target_time:
             # Extract clean reminder text
             rem_text = msg
+            rem_text = re.sub(r"^\[(?:voice|voice message)\]:\s*", "", rem_text, flags=re.IGNORECASE)
             rem_text = re.sub(r"^(?:hello|hey|hi)\s+[a-z0-9_]+\s*[,:]?\s*", "", rem_text, flags=re.IGNORECASE)
             patterns_to_clean = [
                 r"(?:please\s+)?(?:set\s+(?:a\s+)?reminder(?:\s+(?:to|for))?|remind\s+(?:me)?(?:\s+(?:to|for))?)",
