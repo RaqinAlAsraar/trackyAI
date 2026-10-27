@@ -15,9 +15,8 @@ with warnings.catch_warnings():
 FALLBACK_MODELS = [
     {"name": "models/gemma-4-26b-a4b-it", "description": "Gemma 4 26B A4B instruction-tuned model (Default Primary)"},
     {"name": "models/gemma-4-31b-it", "description": "Gemma 4 31B instruction-tuned model"},
-    {"name": "models/gemini-2.5-flash", "description": "Guaranteed ultra-fast fallback without thinking delay (Recommended Backup)"},
-    {"name": "models/gemini-2.0-flash", "description": "Next-generation ultra-fast multimodal model"},
-    {"name": "models/gemini-1.5-flash", "description": "Fast and versatile performance model"},
+    {"name": "models/gemini-3.1-flash-lite", "description": "High quota (1500 RPD) ultra-fast fallback without thinking delay (Recommended Backup)"},
+    {"name": "models/gemini-3-flash-preview", "description": "Fast multimodal preview model"},
 ]
 
 

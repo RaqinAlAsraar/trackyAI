@@ -122,7 +122,7 @@ echo -e "${GREEN}✓ Selected Primary Model: $PRIMARY_MODEL${NC}"
 # Backup Model Selection
 DEFAULT_BACKUP_IDX=1
 for i in "${!MODEL_NAMES[@]}"; do
-    if [[ "${MODEL_NAMES[$i]}" == *"gemini-2.5-flash"* ]] || [[ "${MODEL_NAMES[$i]}" == *"gemini-1.5-flash"* ]]; then
+    if [[ "${MODEL_NAMES[$i]}" == *"gemini-3.1-flash-lite"* ]] || [[ "${MODEL_NAMES[$i]}" == *"flash-lite"* ]]; then
         DEFAULT_BACKUP_IDX=$((i + 1))
         break
     fi

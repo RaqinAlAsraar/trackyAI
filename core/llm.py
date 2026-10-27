@@ -264,14 +264,14 @@ class LLMEngine:
                 logger.info(f"Attempting response generation with primary model '{primary_model}'...")
                 response_text = await asyncio.wait_for(
                     self._call_model(primary_model, ctx, user_message, history),
-                    timeout=7.0,
+                    timeout=18.0,
                 )
                 self.last_model_used = primary_model
                 self.last_duration = round(time.time() - start_time, 2)
                 return response_text
             except Exception as e:
                 logger.warning(
-                    f"Primary model '{primary_model}' failed or timed out: {e}. "
+                    f"Primary model '{primary_model}' failed or timed out: {type(e).__name__}: {e}. "
                     f"Switching immediately to local Ollama fallback..."
                 )
 
@@ -288,7 +288,7 @@ class LLMEngine:
                 else:
                     logger.info("Local Ollama server is not running (circuit breaker checked in <0.6s).")
             except Exception as e:
-                logger.warning(f"Local LLM fallback failed: {e}")
+                logger.warning(f"Local LLM fallback failed: {type(e).__name__}: {e}")
 
         # 3. Secondary Cloud Backup Model (e.g. gemini-3.1-flash-lite)
         if self.client and backup_model != primary_model:
@@ -296,13 +296,13 @@ class LLMEngine:
                 logger.info(f"Attempting cloud backup model '{backup_model}'...")
                 response_text = await asyncio.wait_for(
                     self._call_model(backup_model, ctx, user_message, history),
-                    timeout=5.0,
+                    timeout=10.0,
                 )
                 self.last_model_used = backup_model
                 self.last_duration = round(time.time() - start_time, 2)
                 return response_text
             except Exception as e:
-                logger.warning(f"Backup cloud model '{backup_model}' failed: {e}")
+                logger.warning(f"Backup cloud model '{backup_model}' failed: {type(e).__name__}: {e}")
 
         # 4. Deterministic Offline Fallback Handler (tasks, reminders, calendar via SQLite)
         try:
@@ -357,7 +357,8 @@ class LLMEngine:
             history=initial_history,
         )
 
-        response = await asyncio.wait_for(chat.send_message(user_message), timeout=5.0)
+        step_timeout = 15.0 if "gemma" in model_name.lower() else 8.0
+        response = await asyncio.wait_for(chat.send_message(user_message), timeout=step_timeout)
 
         tool_confirmations: List[str] = []
 

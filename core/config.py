@@ -103,7 +103,7 @@ class LocalLLMConfig(BaseModel):
     host: str = "http://127.0.0.1:11434"
     model: str = "gemma2:2b"
     fallback_on_error: bool = True
-    timeout: float = 12.0
+    timeout: float = 25.0
 
 
 class Settings(BaseModel):

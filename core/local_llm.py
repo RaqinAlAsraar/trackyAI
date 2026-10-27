@@ -107,7 +107,7 @@ class LocalLLMEngine:
                 },
             }
 
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=max(self.timeout, 25.0)) as client:
                 res = await client.post(f"{self.host}/api/chat", json=payload)
                 if res.status_code == 200:
                     data = res.json()
@@ -118,7 +118,7 @@ class LocalLLMEngine:
                 else:
                     logger.warning(f"Local LLM returned status {res.status_code}: {res.text}")
         except Exception as e:
-            logger.warning(f"Local LLM call to '{self.model}' failed: {e}")
+            logger.warning(f"Local LLM call to '{self.model}' failed: {type(e).__name__}: {e}")
 
         return None
 
