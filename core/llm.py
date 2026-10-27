@@ -258,7 +258,38 @@ class LLMEngine:
         if not backup_model.startswith("models/"):
             backup_model = f"models/{backup_model}"
 
-        # 1. Primary Model: Cloud Gemma 4
+        mode = (getattr(settings.app, "llm_mode", "hybrid") or "hybrid").lower()
+        if getattr(settings.local_llm, "local_only", False):
+            mode = "local_only"
+
+        # =====================================================================
+        # 0. LOCAL-ONLY MODE: Never call Cloud APIs (fast local testing, 0 quota)
+        # =====================================================================
+        if mode in ("local", "local_only", "offline"):
+            logger.info("Local-Only LLM mode active. Skipping cloud APIs completely...")
+            if settings.local_llm.enabled:
+                try:
+                    if await local_llm_engine.is_available():
+                        logger.info(f"Generating response with local model '{settings.local_llm.model}'...")
+                        local_response = await local_llm_engine.generate_response(ctx, user_message, history)
+                        if local_response:
+                            self.last_model_used = f"local:{settings.local_llm.model}"
+                            self.last_duration = round(time.time() - start_time, 2)
+                            return local_response
+                    else:
+                        logger.warning("Local-Only mode active, but Ollama server is not running!")
+                except Exception as e:
+                    logger.warning(f"Local LLM failed in local_only mode: {type(e).__name__}: {e}")
+
+            # Deterministic Offline Rule Engine (SQLite operations)
+            fallback_response = await offline_fallback_handler(ctx, user_message)
+            self.last_model_used = "offline:rule_engine"
+            self.last_duration = round(time.time() - start_time, 2)
+            return fallback_response
+
+        # =====================================================================
+        # 1. HYBRID / CLOUD PRIMARY: Cloud Gemma 4
+        # =====================================================================
         if self.client:
             try:
                 logger.info(f"Attempting response generation with primary model '{primary_model}'...")
@@ -276,7 +307,7 @@ class LLMEngine:
                 )
 
         # 2. Immediate Local Ollama Gemma Fallback
-        if settings.local_llm.enabled and settings.local_llm.fallback_on_error:
+        if mode != "cloud_only" and settings.local_llm.enabled and settings.local_llm.fallback_on_error:
             try:
                 if await local_llm_engine.is_available():
                     logger.info(f"Attempting immediate Local Gemma LLM fallback with '{settings.local_llm.model}'...")

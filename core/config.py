@@ -22,6 +22,7 @@ class AppConfig(BaseModel):
     timezone: str = "Asia/Kolkata"
     debug: bool = True
     log_discussions: bool = True
+    llm_mode: str = "hybrid"  # 'hybrid', 'local_only', or 'cloud_only'
 
 
 class GeminiConfig(BaseModel):
@@ -103,6 +104,7 @@ class LocalLLMConfig(BaseModel):
     host: str = "http://127.0.0.1:11434"
     model: str = "gemma2:2b"
     fallback_on_error: bool = True
+    local_only: bool = False
     timeout: float = 25.0
 
 

@@ -48,8 +48,15 @@ class TelegramAdapter(BaseMessenger):
             return
 
         logger.info(f"Initializing Telegram Bot in mode='{self.mode}'...")
-        req = HTTPXRequest(connect_timeout=25.0, read_timeout=25.0, write_timeout=25.0)
-        self.app = Application.builder().token(self.bot_token).request(req).build()
+        req = HTTPXRequest(connect_timeout=25.0, read_timeout=30.0, write_timeout=25.0)
+        get_updates_req = HTTPXRequest(connect_timeout=25.0, read_timeout=35.0, write_timeout=25.0)
+        self.app = (
+            Application.builder()
+            .token(self.bot_token)
+            .request(req)
+            .get_updates_request(get_updates_req)
+            .build()
+        )
 
         # Command handlers
         self.app.add_handler(CommandHandler("start", self._handle_start))
@@ -70,7 +77,7 @@ class TelegramAdapter(BaseMessenger):
                 await self.app.start()
                 if self.mode == "polling":
                     logger.info("Starting Telegram long polling...")
-                    await self.app.updater.start_polling(drop_pending_updates=True)
+                    await self.app.updater.start_polling(poll_interval=1.0, timeout=15, drop_pending_updates=True)
                 else:
                     logger.info(f"Telegram webhook mode enabled at {settings.telegram.webhook_url}")
                 logger.info("Telegram Bot started successfully.")
@@ -164,12 +171,20 @@ class TelegramAdapter(BaseMessenger):
             await update.message.reply_text(f"⚠️ {msg}")
             return
 
+        mode = (getattr(settings.app, "llm_mode", "hybrid") or "hybrid").lower()
+        if mode in ("local", "local_only", "offline"):
+            mode_desc = f"Local-Only (100% Offline via `{settings.local_llm.model}` — 0 API Quota)"
+        elif mode == "cloud_only":
+            mode_desc = f"Cloud-Only (`{settings.gemini.primary_model}`)"
+        else:
+            mode_desc = f"Hybrid (`{settings.gemini.primary_model}` + `{settings.local_llm.model}` fallback)"
+
         status_text = (
             "🟢 **Tracky AI Status**:\n\n"
-            f"• Model: `{settings.gemini.primary_model}` (Backup: `{settings.gemini.backup_model}`)\n"
-            f"• Timezone: `{settings.app.timezone}`\n"
-            f"• Platform: Telegram (Active)\n"
-            f"• Database: SQLite (Connected)"
+            f"• **LLM Mode**: {mode_desc}\n"
+            f"• **Timezone**: `{settings.app.timezone}`\n"
+            f"• **Platform**: Telegram (Active)\n"
+            f"• **Database**: SQLite (Connected)"
         )
         await update.message.reply_text(status_text, parse_mode="Markdown")
 

@@ -193,6 +193,7 @@ async def test_scheduler_dispatch():
 
     # Manually invoke scheduler check
     await scheduler_service.check_and_dispatch_reminders()
+    await asyncio.sleep(0.05)
     assert len(received_messages) >= 1
     assert "Important scheduler test alert" in received_messages[0]["message"]
 
@@ -264,4 +265,30 @@ async def test_llm_engine_cascade_and_metrics():
     assert len(reply) > 5
     assert llm_engine.last_duration is not None
     assert llm_engine.last_model_used is not None
+
+
+@pytest.mark.asyncio
+async def test_llm_engine_local_only_mode():
+    from core.llm import llm_engine
+    from core.config import settings
+
+    ctx = ToolContext(
+        user_id="test_local_mode_user",
+        platform="telegram",
+        chat_id="77777",
+        timezone_name="UTC",
+        user_name="LocalTester",
+        assistant_name="Tracky",
+    )
+
+    original_mode = settings.app.llm_mode
+    try:
+        settings.app.llm_mode = "local_only"
+        reply = await llm_engine.generate_response(ctx, "show active reminders")
+        assert reply is not None
+        assert "Active Reminders" in reply or "pending reminders" in reply
+        # Verify it did not attempt cloud models
+        assert llm_engine.last_model_used.startswith("local:") or llm_engine.last_model_used.startswith("offline:")
+    finally:
+        settings.app.llm_mode = original_mode
 

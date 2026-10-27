@@ -59,6 +59,34 @@ echo -e "${GREEN}✓ Dependencies installed successfully.${NC}"
 # 3. Interactive Configuration Prompts
 echo -e "\n${BOLD}${CYAN}--- Configuration Wizard ---${NC}"
 
+# Load existing configuration defaults if config.json exists
+EXISTING_LLM_MODE="hybrid"
+EXISTING_KEY=""
+EXISTING_PRIMARY="models/gemma-4-26b-a4b-it"
+EXISTING_BACKUP="models/gemini-3.1-flash-lite"
+EXISTING_OLLAMA_ENABLED=true
+EXISTING_OLLAMA_HOST="http://127.0.0.1:11434"
+EXISTING_OLLAMA_MODEL="gemma2:2b"
+EXISTING_PORT=8002
+EXISTING_ASSISTANT_NAME="Tracky"
+EXISTING_USER_NAME="User"
+EXISTING_TG_TOKEN=""
+EXISTING_TG_ALLOWED=""
+
+if [ -f "config.json" ]; then
+    EXISTING_LLM_MODE=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('app', {}).get('llm_mode', 'hybrid'))" 2>/dev/null || echo "hybrid")
+    EXISTING_KEY=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('gemini', {}).get('api_key', ''))" 2>/dev/null || true)
+    EXISTING_PRIMARY=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('gemini', {}).get('primary_model', 'models/gemma-4-26b-a4b-it'))" 2>/dev/null || echo "models/gemma-4-26b-a4b-it")
+    EXISTING_BACKUP=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('gemini', {}).get('backup_model', 'models/gemini-3.1-flash-lite'))" 2>/dev/null || echo "models/gemini-3.1-flash-lite")
+    EXISTING_OLLAMA_HOST=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('local_llm', {}).get('host', 'http://127.0.0.1:11434'))" 2>/dev/null || echo "http://127.0.0.1:11434")
+    EXISTING_OLLAMA_MODEL=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('local_llm', {}).get('model', 'gemma2:2b'))" 2>/dev/null || echo "gemma2:2b")
+    EXISTING_PORT=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('app', {}).get('port', 8002))" 2>/dev/null || echo "8002")
+    EXISTING_ASSISTANT_NAME=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('app', {}).get('assistant_name', 'Tracky'))" 2>/dev/null || echo "Tracky")
+    EXISTING_USER_NAME=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('app', {}).get('user_name', 'User'))" 2>/dev/null || echo "User")
+    EXISTING_TG_TOKEN=$(.venv/bin/python3 -c "import json; print(json.load(open('config.json')).get('telegram', {}).get('bot_token', ''))" 2>/dev/null || true)
+    EXISTING_TG_ALLOWED=$(.venv/bin/python3 -c "import json; print(','.join(str(x) for x in json.load(open('config.json')).get('telegram', {}).get('allowed_user_ids', [])))" 2>/dev/null || true)
+fi
+
 # Server Deployment Type
 echo -e "\n${YELLOW}Where will you run Tracky AI?${NC}"
 echo "1) Local Linux machine"
@@ -66,98 +94,205 @@ echo "2) DigitalOcean / Cloud VPS (with systemd service option)"
 read -rp "Select option [1/2] (default: 1): " SERVER_CHOICE
 SERVER_CHOICE=${SERVER_CHOICE:-1}
 
-# Gemini API Key
-echo -e "\n${YELLOW}Google Gemini API Key:${NC}"
-echo "Get one for free at https://aistudio.google.com/"
-read -rp "Enter your Gemini API Key: " GEMINI_KEY
-while [ -z "$GEMINI_KEY" ]; do
-    echo -e "${RED}API key cannot be empty.${NC}"
-    read -rp "Enter your Gemini API Key: " GEMINI_KEY
-done
+# Web Server Port
+read -rp "Web Server Port (default: $EXISTING_PORT): " CONFIG_PORT
+CONFIG_PORT=${CONFIG_PORT:-$EXISTING_PORT}
 
-# Fetch and List All Available Models
-echo -e "\n${BLUE}Querying available models from Google AI Studio API...${NC}"
-AVAILABLE_MODELS_RAW=$(.venv/bin/python3 scripts/list_models.py "$GEMINI_KEY" --json 2>/dev/null || .venv/bin/python3 scripts/list_models.py "" --json)
+# LLM Execution Mode Selection
+echo -e "\n${BOLD}${CYAN}--- LLM Execution Mode ---${NC}"
+echo -e "${YELLOW}Choose how you want Tracky AI to run:${NC}"
+echo "1) Hybrid Mode: Cloud Gemma 4 primary + Local Ollama fallback on error/quota (Recommended for daily use)"
+echo "2) Completely Local LLM: 100% Offline via Ollama (Zero API Quota usage, Fast Testing)"
+echo "3) Cloud API Only: Google Cloud AI models only"
+DEFAULT_MODE_OPT=1
+if [ "$EXISTING_LLM_MODE" == "local_only" ] || [ "$EXISTING_LLM_MODE" == "local" ]; then
+    DEFAULT_MODE_OPT=2
+elif [ "$EXISTING_LLM_MODE" == "cloud_only" ]; then
+    DEFAULT_MODE_OPT=3
+fi
+read -rp "Select mode [1-3] (default: $DEFAULT_MODE_OPT): " LLM_MODE_CHOICE
+LLM_MODE_CHOICE=${LLM_MODE_CHOICE:-$DEFAULT_MODE_OPT}
 
-MODEL_NAMES=($(.venv/bin/python3 -c "
-import json, sys
+if [ "$LLM_MODE_CHOICE" -eq 2 ]; then
+    LLM_MODE="local_only"
+    LOCAL_LLM_ENABLED=true
+    LOCAL_ONLY_CONFIG=true
+    echo -e "${GREEN}✓ Selected: Completely Local LLM Mode (Zero API quota used!)${NC}"
+    
+    echo -e "\n${BOLD}${CYAN}--- Local Ollama LLM Configuration ---${NC}"
+    read -rp "Enter Ollama Host URL (default: ${EXISTING_OLLAMA_HOST}): " OLLAMA_HOST
+    OLLAMA_HOST=${OLLAMA_HOST:-$EXISTING_OLLAMA_HOST}
+    read -rp "Enter Ollama Model Name (default: ${EXISTING_OLLAMA_MODEL}): " OLLAMA_MODEL
+    OLLAMA_MODEL=${OLLAMA_MODEL:-$EXISTING_OLLAMA_MODEL}
+    echo -e "${GREEN}✓ Local Ollama configured with model: $OLLAMA_MODEL at $OLLAMA_HOST${NC}"
+    
+    # Optional Gemini Key in local mode
+    if [ -n "$EXISTING_KEY" ]; then
+        GEMINI_KEY="$EXISTING_KEY"
+    else
+        read -rp "Enter Gemini API Key (Optional in local-only mode, press Enter to skip): " GEMINI_KEY
+    fi
+    PRIMARY_MODEL="${EXISTING_PRIMARY:-models/gemma-4-26b-a4b-it}"
+    BACKUP_MODEL="${EXISTING_BACKUP:-models/gemini-3.1-flash-lite}"
+
+elif [ "$LLM_MODE_CHOICE" -eq 3 ]; then
+    LLM_MODE="cloud_only"
+    LOCAL_LLM_ENABLED=false
+    LOCAL_ONLY_CONFIG=false
+    OLLAMA_HOST="$EXISTING_OLLAMA_HOST"
+    OLLAMA_MODEL="$EXISTING_OLLAMA_MODEL"
+    echo -e "${GREEN}✓ Selected: Cloud API Only Mode${NC}"
+
+    # Gemini API Key
+    echo -e "\n${YELLOW}Google Gemini API Key:${NC}"
+    if [ -n "$EXISTING_KEY" ]; then
+        read -rp "Enter your Gemini API Key (press Enter to keep existing key): " INPUT_KEY
+        GEMINI_KEY=${INPUT_KEY:-$EXISTING_KEY}
+    else
+        read -rp "Enter your Gemini API Key: " GEMINI_KEY
+        while [ -z "$GEMINI_KEY" ]; do
+            echo -e "${RED}API key cannot be empty in cloud mode.${NC}"
+            read -rp "Enter your Gemini API Key: " GEMINI_KEY
+        done
+    fi
+
+    # Fetch and List All Available Models
+    echo -e "\n${BLUE}Querying available models from Google AI Studio API...${NC}"
+    AVAILABLE_MODELS_RAW=$(.venv/bin/python3 scripts/list_models.py "$GEMINI_KEY" --json 2>/dev/null || .venv/bin/python3 scripts/list_models.py "" --json)
+    MODEL_NAMES=($(.venv/bin/python3 -c "
+import json
 data = json.loads('''$AVAILABLE_MODELS_RAW''')
 print(' '.join(m['name'] for m in data))
 "))
-
-TOTAL_MODELS=${#MODEL_NAMES[@]}
-
-echo -e "\n${BOLD}${CYAN}--- Available Google Models ---${NC}"
-.venv/bin/python3 -c "
+    TOTAL_MODELS=${#MODEL_NAMES[@]}
+    echo -e "\n${BOLD}${CYAN}--- Available Google Models ---${NC}"
+    .venv/bin/python3 -c "
 import json
 data = json.loads('''$AVAILABLE_MODELS_RAW''')
 for idx, m in enumerate(data, 1):
     print(f\"{idx}) \033[1m{m['name']}\033[0m - {m['description']}\")
 "
-CUSTOM_IDX=$((TOTAL_MODELS + 1))
-echo -e "${CUSTOM_IDX}) \033[1mCustom model name\033[0m (enter manually)"
+    CUSTOM_IDX=$((TOTAL_MODELS + 1))
+    echo -e "${CUSTOM_IDX}) \033[1mCustom model name\033[0m (enter manually)"
 
-# Primary Model Selection
-DEFAULT_PRIMARY_IDX=1
-for i in "${!MODEL_NAMES[@]}"; do
-    if [[ "${MODEL_NAMES[$i]}" == *"gemma-4-26b"* ]] || [[ "${MODEL_NAMES[$i]}" == *"gemma-4"* ]]; then
-        DEFAULT_PRIMARY_IDX=$((i + 1))
-        break
+    # Primary Model Selection
+    DEFAULT_PRIMARY_IDX=1
+    for i in "${!MODEL_NAMES[@]}"; do
+        if [[ "${MODEL_NAMES[$i]}" == *"gemma-4-26b"* ]] || [[ "${MODEL_NAMES[$i]}" == *"gemma-4"* ]]; then
+            DEFAULT_PRIMARY_IDX=$((i + 1))
+            break
+        fi
+    done
+    read -rp "Select primary model [1-${CUSTOM_IDX}] (default: ${DEFAULT_PRIMARY_IDX} [${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}]): " MODEL_CHOICE
+    MODEL_CHOICE=${MODEL_CHOICE:-$DEFAULT_PRIMARY_IDX}
+    if [ "$MODEL_CHOICE" -ge 1 ] && [ "$MODEL_CHOICE" -le "$TOTAL_MODELS" ]; then
+        PRIMARY_MODEL="${MODEL_NAMES[$((MODEL_CHOICE - 1))]}"
+    elif [ "$MODEL_CHOICE" -eq "$CUSTOM_IDX" ]; then
+        read -rp "Enter custom primary model name: " PRIMARY_MODEL
+    else
+        PRIMARY_MODEL="${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}"
     fi
-done
 
-echo -e "\n${YELLOW}Select Primary LLM Model:${NC}"
-read -rp "Select primary model [1-${CUSTOM_IDX}] (default: ${DEFAULT_PRIMARY_IDX} [${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}]): " MODEL_CHOICE
-MODEL_CHOICE=${MODEL_CHOICE:-$DEFAULT_PRIMARY_IDX}
-
-if [ "$MODEL_CHOICE" -ge 1 ] && [ "$MODEL_CHOICE" -le "$TOTAL_MODELS" ]; then
-    PRIMARY_MODEL="${MODEL_NAMES[$((MODEL_CHOICE - 1))]}"
-elif [ "$MODEL_CHOICE" -eq "$CUSTOM_IDX" ]; then
-    read -rp "Enter custom primary model name: " PRIMARY_MODEL
-else
-    PRIMARY_MODEL="${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}"
-fi
-echo -e "${GREEN}✓ Selected Primary Model: $PRIMARY_MODEL${NC}"
-
-# Backup Model Selection
-DEFAULT_BACKUP_IDX=1
-for i in "${!MODEL_NAMES[@]}"; do
-    if [[ "${MODEL_NAMES[$i]}" == *"gemini-3.1-flash-lite"* ]] || [[ "${MODEL_NAMES[$i]}" == *"flash-lite"* ]]; then
-        DEFAULT_BACKUP_IDX=$((i + 1))
-        break
+    # Backup Model Selection
+    DEFAULT_BACKUP_IDX=1
+    for i in "${!MODEL_NAMES[@]}"; do
+        if [[ "${MODEL_NAMES[$i]}" == *"gemini-3.1-flash-lite"* ]] || [[ "${MODEL_NAMES[$i]}" == *"flash-lite"* ]]; then
+            DEFAULT_BACKUP_IDX=$((i + 1))
+            break
+        fi
+    done
+    read -rp "Select backup model [1-${CUSTOM_IDX}] (default: ${DEFAULT_BACKUP_IDX} [${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}]): " BACKUP_CHOICE
+    BACKUP_CHOICE=${BACKUP_CHOICE:-$DEFAULT_BACKUP_IDX}
+    if [ "$BACKUP_CHOICE" -ge 1 ] && [ "$BACKUP_CHOICE" -le "$TOTAL_MODELS" ]; then
+        BACKUP_MODEL="${MODEL_NAMES[$((BACKUP_CHOICE - 1))]}"
+    elif [ "$BACKUP_CHOICE" -eq "$CUSTOM_IDX" ]; then
+        read -rp "Enter custom backup model name: " BACKUP_MODEL
+    else
+        BACKUP_MODEL="${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}"
     fi
-done
 
-echo -e "\n${YELLOW}Select Backup Fallback Model (used automatically if primary hits rate limits or errors):${NC}"
-read -rp "Select backup model [1-${CUSTOM_IDX}] (default: ${DEFAULT_BACKUP_IDX} [${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}]): " BACKUP_CHOICE
-BACKUP_CHOICE=${BACKUP_CHOICE:-$DEFAULT_BACKUP_IDX}
-
-if [ "$BACKUP_CHOICE" -ge 1 ] && [ "$BACKUP_CHOICE" -le "$TOTAL_MODELS" ]; then
-    BACKUP_MODEL="${MODEL_NAMES[$((BACKUP_CHOICE - 1))]}"
-elif [ "$BACKUP_CHOICE" -eq "$CUSTOM_IDX" ]; then
-    read -rp "Enter custom backup model name: " BACKUP_MODEL
 else
-    BACKUP_MODEL="${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}"
-fi
-echo -e "${GREEN}✓ Selected Backup Fallback Model: $BACKUP_MODEL${NC}"
-
-# Local Ollama LLM Fallback Setup
-echo -e "\n${BOLD}${CYAN}--- Local Ollama LLM Offline Fallback ---${NC}"
-echo -e "Enables offline & zero-quota fallback using local Gemma on Ollama."
-read -rp "Enable Local Ollama fallback? [Y/n] (default: Y): " OLLAMA_ENABLE_INPUT
-OLLAMA_ENABLE_INPUT=${OLLAMA_ENABLE_INPUT:-Y}
-if [[ "$OLLAMA_ENABLE_INPUT" =~ ^[Yy]$ ]]; then
+    # Hybrid Mode
+    LLM_MODE="hybrid"
     LOCAL_LLM_ENABLED=true
-    read -rp "Enter Ollama Host URL (default: http://127.0.0.1:11434): " OLLAMA_HOST
-    OLLAMA_HOST=${OLLAMA_HOST:-"http://127.0.0.1:11434"}
-    read -rp "Enter Ollama Model Name (default: gemma2:2b): " OLLAMA_MODEL
-    OLLAMA_MODEL=${OLLAMA_MODEL:-"gemma2:2b"}
+    LOCAL_ONLY_CONFIG=false
+    echo -e "${GREEN}✓ Selected: Hybrid Mode (Cloud Primary + Local Ollama Fallback)${NC}"
+
+    # Gemini API Key
+    echo -e "\n${YELLOW}Google Gemini API Key:${NC}"
+    if [ -n "$EXISTING_KEY" ]; then
+        read -rp "Enter your Gemini API Key (press Enter to keep existing key): " INPUT_KEY
+        GEMINI_KEY=${INPUT_KEY:-$EXISTING_KEY}
+    else
+        read -rp "Enter your Gemini API Key: " GEMINI_KEY
+        while [ -z "$GEMINI_KEY" ]; do
+            echo -e "${RED}API key cannot be empty.${NC}"
+            read -rp "Enter your Gemini API Key: " GEMINI_KEY
+        done
+    fi
+
+    # Fetch and List All Available Models
+    echo -e "\n${BLUE}Querying available models from Google AI Studio API...${NC}"
+    AVAILABLE_MODELS_RAW=$(.venv/bin/python3 scripts/list_models.py "$GEMINI_KEY" --json 2>/dev/null || .venv/bin/python3 scripts/list_models.py "" --json)
+    MODEL_NAMES=($(.venv/bin/python3 -c "
+import json
+data = json.loads('''$AVAILABLE_MODELS_RAW''')
+print(' '.join(m['name'] for m in data))
+"))
+    TOTAL_MODELS=${#MODEL_NAMES[@]}
+    echo -e "\n${BOLD}${CYAN}--- Available Google Models ---${NC}"
+    .venv/bin/python3 -c "
+import json
+data = json.loads('''$AVAILABLE_MODELS_RAW''')
+for idx, m in enumerate(data, 1):
+    print(f\"{idx}) \033[1m{m['name']}\033[0m - {m['description']}\")
+"
+    CUSTOM_IDX=$((TOTAL_MODELS + 1))
+    echo -e "${CUSTOM_IDX}) \033[1mCustom model name\033[0m (enter manually)"
+
+    # Primary Model Selection
+    DEFAULT_PRIMARY_IDX=1
+    for i in "${!MODEL_NAMES[@]}"; do
+        if [[ "${MODEL_NAMES[$i]}" == *"gemma-4-26b"* ]] || [[ "${MODEL_NAMES[$i]}" == *"gemma-4"* ]]; then
+            DEFAULT_PRIMARY_IDX=$((i + 1))
+            break
+        fi
+    done
+    read -rp "Select primary model [1-${CUSTOM_IDX}] (default: ${DEFAULT_PRIMARY_IDX} [${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}]): " MODEL_CHOICE
+    MODEL_CHOICE=${MODEL_CHOICE:-$DEFAULT_PRIMARY_IDX}
+    if [ "$MODEL_CHOICE" -ge 1 ] && [ "$MODEL_CHOICE" -le "$TOTAL_MODELS" ]; then
+        PRIMARY_MODEL="${MODEL_NAMES[$((MODEL_CHOICE - 1))]}"
+    elif [ "$MODEL_CHOICE" -eq "$CUSTOM_IDX" ]; then
+        read -rp "Enter custom primary model name: " PRIMARY_MODEL
+    else
+        PRIMARY_MODEL="${MODEL_NAMES[$((DEFAULT_PRIMARY_IDX - 1))]}"
+    fi
+
+    # Backup Model Selection
+    DEFAULT_BACKUP_IDX=1
+    for i in "${!MODEL_NAMES[@]}"; do
+        if [[ "${MODEL_NAMES[$i]}" == *"gemini-3.1-flash-lite"* ]] || [[ "${MODEL_NAMES[$i]}" == *"flash-lite"* ]]; then
+            DEFAULT_BACKUP_IDX=$((i + 1))
+            break
+        fi
+    done
+    read -rp "Select backup model [1-${CUSTOM_IDX}] (default: ${DEFAULT_BACKUP_IDX} [${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}]): " BACKUP_CHOICE
+    BACKUP_CHOICE=${BACKUP_CHOICE:-$DEFAULT_BACKUP_IDX}
+    if [ "$BACKUP_CHOICE" -ge 1 ] && [ "$BACKUP_CHOICE" -le "$TOTAL_MODELS" ]; then
+        BACKUP_MODEL="${MODEL_NAMES[$((BACKUP_CHOICE - 1))]}"
+    elif [ "$BACKUP_CHOICE" -eq "$CUSTOM_IDX" ]; then
+        read -rp "Enter custom backup model name: " BACKUP_MODEL
+    else
+        BACKUP_MODEL="${MODEL_NAMES[$((DEFAULT_BACKUP_IDX - 1))]}"
+    fi
+
+    # Local Ollama Fallback
+    echo -e "\n${BOLD}${CYAN}--- Local Ollama LLM Fallback ---${NC}"
+    read -rp "Enter Ollama Host URL (default: ${EXISTING_OLLAMA_HOST}): " OLLAMA_HOST
+    OLLAMA_HOST=${OLLAMA_HOST:-$EXISTING_OLLAMA_HOST}
+    read -rp "Enter Ollama Model Name (default: ${EXISTING_OLLAMA_MODEL}): " OLLAMA_MODEL
+    OLLAMA_MODEL=${OLLAMA_MODEL:-$EXISTING_OLLAMA_MODEL}
     echo -e "${GREEN}✓ Local Ollama configured with model: $OLLAMA_MODEL at $OLLAMA_HOST${NC}"
-else
-    LOCAL_LLM_ENABLED=false
-    OLLAMA_HOST="http://127.0.0.1:11434"
-    OLLAMA_MODEL="gemma2:2b"
-    echo -e "${YELLOW}! Local Ollama fallback disabled.${NC}"
 fi
 
 # Messaging Platform Selection
@@ -182,7 +317,12 @@ if [ "$PLATFORM_CHOICE" == "1" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
     TELEGRAM_ENABLED=true
     echo -e "\n${BOLD}${BLUE}--- Telegram Bot Setup ---${NC}"
     echo "Create a bot in Telegram by messaging @BotFather and copy the HTTP API Token."
-    read -rp "Enter your Telegram Bot Token: " TELEGRAM_TOKEN
+    if [ -n "$EXISTING_TG_TOKEN" ]; then
+        read -rp "Enter your Telegram Bot Token (press Enter to keep existing): " INPUT_TG_TOKEN
+        TELEGRAM_TOKEN=${INPUT_TG_TOKEN:-$EXISTING_TG_TOKEN}
+    else
+        read -rp "Enter your Telegram Bot Token: " TELEGRAM_TOKEN
+    fi
     
     echo "Connection mode:"
     echo "1) Polling (Works immediately locally & VPS without public domain or SSL)"
@@ -197,7 +337,12 @@ if [ "$PLATFORM_CHOICE" == "1" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
     echo -e "\n${YELLOW}Telegram User ID Restriction (Sole User Access):${NC}"
     echo "To restrict Tracky so it operates solely for you and ignores strangers:"
     echo "(Tip: Send any message to @userinfobot on Telegram to see your numeric User ID)"
-    read -rp "Enter your Telegram User ID (press Enter to skip restriction): " TG_USER_ID
+    if [ -n "$EXISTING_TG_ALLOWED" ]; then
+        read -rp "Enter your Telegram User ID (default: ${EXISTING_TG_ALLOWED}): " INPUT_TG_ID
+        TG_USER_ID=${INPUT_TG_ID:-$EXISTING_TG_ALLOWED}
+    else
+        read -rp "Enter your Telegram User ID (press Enter to skip restriction): " TG_USER_ID
+    fi
 fi
 
 if [ "$PLATFORM_CHOICE" == "2" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
@@ -218,12 +363,11 @@ fi
 
 # Personalization
 echo -e "\n${BOLD}${CYAN}--- Personalization ---${NC}"
-read -rp "What is your name? " USER_NAME
-USER_NAME=${USER_NAME:-"User"}
+read -rp "What is your name? (default: $EXISTING_USER_NAME): " USER_NAME
+USER_NAME=${USER_NAME:-$EXISTING_USER_NAME}
 
-DEFAULT_ASSISTANT_NAME="Tracky"
-read -rp "What would you like to name your AI assistant? (default: $DEFAULT_ASSISTANT_NAME): " ASSISTANT_NAME
-ASSISTANT_NAME=${ASSISTANT_NAME:-$DEFAULT_ASSISTANT_NAME}
+read -rp "What would you like to name your AI assistant? (default: $EXISTING_ASSISTANT_NAME): " ASSISTANT_NAME
+ASSISTANT_NAME=${ASSISTANT_NAME:-$EXISTING_ASSISTANT_NAME}
 echo -e "${GREEN}✓ Great! $ASSISTANT_NAME will assist $USER_NAME.${NC}"
 
 # Timezone Selection
@@ -286,10 +430,11 @@ cat <<EOF > config.json
     "assistant_name": "$ASSISTANT_NAME",
     "user_name": "$USER_NAME",
     "host": "0.0.0.0",
-    "port": 8000,
+    "port": $CONFIG_PORT,
     "timezone": "$USER_TZ",
     "debug": true,
-    "log_discussions": true
+    "log_discussions": true,
+    "llm_mode": "$LLM_MODE"
   },
   "gemini": {
     "api_key": "$GEMINI_KEY",
@@ -304,7 +449,8 @@ cat <<EOF > config.json
     "host": "$OLLAMA_HOST",
     "model": "$OLLAMA_MODEL",
     "fallback_on_error": true,
-    "timeout": 12.0
+    "local_only": $LOCAL_ONLY_CONFIG,
+    "timeout": 25.0
   },
   "database": {
     "path": "tracky.db"
