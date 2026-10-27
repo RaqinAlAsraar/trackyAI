@@ -9,6 +9,14 @@ from db import database as db
 from adapters.whatsapp_bot import format_for_whatsapp, whatsapp_adapter
 
 
+@pytest.fixture(autouse=True)
+def allow_test_whatsapp_number():
+    orig_allowed = settings.whatsapp.allowed_phone_numbers
+    settings.whatsapp.allowed_phone_numbers = []
+    yield
+    settings.whatsapp.allowed_phone_numbers = orig_allowed
+
+
 def test_format_for_whatsapp():
     raw = "🔔 **Today's Active Reminders** (2):\n\n• **#1**: Exam — `Tomorrow at 6:00 AM`"
     formatted = format_for_whatsapp(raw)
