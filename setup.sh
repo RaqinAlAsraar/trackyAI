@@ -298,13 +298,15 @@ fi
 # Messaging Platform Selection
 echo -e "\n${YELLOW}Which messaging platform(s) do you want to configure?${NC}"
 echo "1) Telegram only (Easiest & recommended for daily use)"
-echo "2) WhatsApp only (via Twilio)"
-echo "3) Both Telegram and WhatsApp"
-read -rp "Select platform [1-3] (default: 1): " PLATFORM_CHOICE
+echo "2) WhatsApp only (via WhatsApp Web Session - QR Link)"
+echo "3) Both Telegram and WhatsApp (Web Session)"
+echo "4) WhatsApp via Twilio"
+read -rp "Select platform [1-4] (default: 1): " PLATFORM_CHOICE
 PLATFORM_CHOICE=${PLATFORM_CHOICE:-1}
 
 TELEGRAM_ENABLED=false
 WHATSAPP_ENABLED=false
+WA_PROVIDER="web_session"
 TELEGRAM_TOKEN=""
 TELEGRAM_MODE="polling"
 TG_USER_ID=""
@@ -347,6 +349,18 @@ fi
 
 if [ "$PLATFORM_CHOICE" == "2" ] || [ "$PLATFORM_CHOICE" == "3" ]; then
     WHATSAPP_ENABLED=true
+    WA_PROVIDER="web_session"
+    echo -e "\n${BOLD}${GREEN}--- WhatsApp Web Session Setup ---${NC}"
+    echo "Uses WhatsApp Web Multi-Device link (No Twilio or Meta account needed!)."
+    echo "When Tracky starts, you simply scan the QR code with WhatsApp (Linked Devices)."
+    echo -e "\n${YELLOW}WhatsApp Phone Number Restriction (Sole User Access):${NC}"
+    echo "Enter your personal phone number (with country code, e.g. +919876543210) to restrict Tracky solely to you."
+    read -rp "Enter your phone number (or press Enter to allow your linked session): " WA_USER_PHONE
+fi
+
+if [ "$PLATFORM_CHOICE" == "4" ]; then
+    WHATSAPP_ENABLED=true
+    WA_PROVIDER="twilio"
     echo -e "\n${BOLD}${BLUE}--- WhatsApp (Twilio) Setup ---${NC}"
     echo "Get credentials at https://console.twilio.com/ -> Messaging -> Try WhatsApp Sandbox"
     read -rp "Enter Twilio Account SID: " TWILIO_SID
@@ -471,7 +485,9 @@ cat <<EOF > config.json
   },
   "whatsapp": {
     "enabled": $WHATSAPP_ENABLED,
-    "provider": "twilio",
+    "provider": "$WA_PROVIDER",
+    "web_session_url": "http://127.0.0.1:3001",
+    "web_session_auto_start": true,
     "twilio_account_sid": "$TWILIO_SID",
     "twilio_auth_token": "$TWILIO_TOKEN",
     "twilio_phone_number": "$TWILIO_PHONE",

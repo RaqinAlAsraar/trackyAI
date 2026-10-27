@@ -30,3 +30,9 @@ data/
 *.swp
 *.swo
 .ollama/
+
+# Node & WhatsApp Web Session
+node_modules/
+whatsapp_bridge/node_modules/
+whatsapp_bridge/auth_info/
+

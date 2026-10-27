@@ -77,7 +77,9 @@ class TelegramConfig(BaseModel):
 
 class WhatsAppConfig(BaseModel):
     enabled: bool = False
-    provider: str = "twilio"  # 'twilio' or 'meta'
+    provider: str = "web_session"  # 'web_session', 'twilio', or 'meta'
+    web_session_url: str = "http://127.0.0.1:3001"
+    web_session_auto_start: bool = True
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""

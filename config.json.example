@@ -32,7 +32,9 @@
   },
   "whatsapp": {
     "enabled": false,
-    "provider": "twilio",
+    "provider": "web_session",
+    "web_session_url": "http://127.0.0.1:3001",
+    "web_session_auto_start": true,
     "twilio_account_sid": "YOUR_TWILIO_ACCOUNT_SID",
     "twilio_auth_token": "YOUR_TWILIO_AUTH_TOKEN",
     "twilio_phone_number": "whatsapp:+14155238886",
