@@ -258,6 +258,15 @@ class LLMEngine:
         if not backup_model.startswith("models/"):
             backup_model = f"models/{backup_model}"
 
+        # Check smart local NLP engine first for instant, accurate actions
+        from core.nlp_engine import nlp_engine
+        nlp_res = await nlp_engine.process_user_intent(ctx, user_message)
+        if nlp_res:
+            self.last_model_used = "nlp:smart_engine"
+            self.last_duration = round(time.time() - start_time, 2)
+            logger.info("Processed via smart local NLP engine.")
+            return nlp_res
+
         mode = (getattr(settings.app, "llm_mode", "hybrid") or "hybrid").lower()
         if getattr(settings.local_llm, "local_only", False):
             mode = "local_only"

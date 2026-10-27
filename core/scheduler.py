@@ -14,7 +14,33 @@ from core.logger import logger
 from core.config import settings
 import db.database as db
 
-from core.local_llm import format_iso_to_local
+from core.nlp_engine import format_iso_to_local
+
+
+def get_reminder_emoji(text: str) -> str:
+    tl = text.lower()
+    if any(w in tl for w in ["coffee", "tea", "espresso", "latte"]):
+        return "☕"
+    if any(w in tl for w in ["call", "phone", "ring"]):
+        return "📞"
+    if any(w in tl for w in ["namaz", "prayer", "fajr", "maghrib", "isha", "dhuhr", "asr"]):
+        return "🕌"
+    if any(w in tl for w in ["exam", "study", "read", "book", "test", "notes"]):
+        return "📚"
+    if any(w in tl for w in ["gym", "workout", "exercise", "run", "walk", "tennis"]):
+        return "💪"
+    if any(w in tl for w in ["code", "coding", "hack", "project", "dev", "program"]):
+        return "💻"
+    if any(w in tl for w in ["pill", "medicine", "medication", "doctor"]):
+        return "💊"
+    if any(w in tl for w in ["eat", "lunch", "dinner", "breakfast", "meal", "food"]):
+        return "🍽️"
+    if any(w in tl for w in ["sleep", "bed", "rest"]):
+        return "🌙"
+    if any(w in tl for w in ["meeting", "interview", "appointment"]):
+        return "📅"
+    return "🔔"
+
 
 # Callback registry for outbound message dispatchers: platform -> callback(chat_id, message_text)
 _dispatchers: Dict[str, Callable] = {}
@@ -78,11 +104,14 @@ class BackgroundScheduler:
 
         logger.info(f"Firing reminder #{reminder_id} for user {user_id} on {platform}:{chat_id}")
 
+        user_name = settings.app.user_name or "Friend"
+        icon = get_reminder_emoji(text)
         time_display = format_iso_to_local(r.get("remind_at", ""), settings.app.timezone)
+
         alert_message = (
-            f"🔔 **Reminder from {settings.app.assistant_name}**\n\n"
-            f"{text}\n\n"
-            f"⏰ Scheduled for: `{time_display}`"
+            f"🔔 **Hey {user_name}! Time for your reminder:**\n\n"
+            f"{icon} **{text}**\n\n"
+            f"⏰ *Scheduled for: {time_display}*"
         )
 
         dispatcher = _dispatchers.get(platform)

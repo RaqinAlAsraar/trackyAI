@@ -157,6 +157,60 @@ async def delete_task(task_id: int, user_id: str) -> bool:
         return cursor.rowcount > 0
 
 
+async def delete_tasks_by_ids(task_ids: List[int], user_id: str) -> int:
+    """Deletes multiple tasks by their IDs in a single query."""
+    if not task_ids:
+        return 0
+    placeholders = ",".join("?" for _ in task_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"DELETE FROM tasks WHERE user_id = ? AND id IN ({placeholders})",
+            [user_id, *task_ids],
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def delete_all_tasks(user_id: str, status: Optional[str] = "pending") -> int:
+    """Clears tasks for user, optionally filtered by status (default 'pending')."""
+    async with get_db() as db:
+        if status:
+            cursor = await db.execute(
+                "DELETE FROM tasks WHERE user_id = ? AND status = ?",
+                (user_id, status),
+            )
+        else:
+            cursor = await db.execute(
+                "DELETE FROM tasks WHERE user_id = ?",
+                (user_id,),
+            )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def add_multiple_tasks(
+    user_id: str, platform: str, titles: List[str], priority: str = "normal"
+) -> List[Dict[str, Any]]:
+    """Inserts multiple tasks in a single transaction."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created = []
+    async with get_db() as db:
+        for t in titles:
+            clean_title = t.strip()
+            if not clean_title:
+                continue
+            cursor = await db.execute(
+                """
+                INSERT INTO tasks (user_id, platform, title, priority, created_at, status)
+                VALUES (?, ?, ?, ?, ?, 'pending')
+                """,
+                (user_id, platform, clean_title, priority, now_iso),
+            )
+            created.append({"id": cursor.lastrowid, "title": clean_title, "priority": priority})
+        await db.commit()
+    return created
+
+
 # -------------------------------------------------------------
 # Events & Schedules CRUD
 # -------------------------------------------------------------
@@ -321,6 +375,35 @@ async def delete_reminder(reminder_id: int, user_id: str) -> bool:
         )
         await db.commit()
         return cursor.rowcount > 0
+
+
+async def delete_reminders_by_ids(reminder_ids: List[int], user_id: str) -> int:
+    """Deletes multiple reminders by their IDs."""
+    if not reminder_ids:
+        return 0
+    placeholders = ",".join("?" for _ in reminder_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"DELETE FROM reminders WHERE user_id = ? AND id IN ({placeholders})",
+            [user_id, *reminder_ids],
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def delete_inactive_reminders(user_id: str) -> int:
+    """Removes all triggered, cancelled, or past-due reminders for user."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM reminders
+            WHERE user_id = ? AND (status IN ('triggered', 'cancelled') OR (status = 'pending' AND remind_at < ?))
+            """,
+            (user_id, now_iso),
+        )
+        await db.commit()
+        return cursor.rowcount
 
 
 async def cleanup_old_reminders() -> int:

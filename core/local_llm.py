@@ -79,9 +79,10 @@ class LocalLLMEngine:
             return None
 
         # 1. First check if user message is a concrete actionable intent (reminders, tasks, lists)
-        intent_res = await execute_deterministic_intent(ctx, user_message)
+        from core.nlp_engine import nlp_engine
+        intent_res = await nlp_engine.process_user_intent(ctx, user_message)
         if intent_res:
-            logger.info("Executed deterministic intent directly for local engine.")
+            logger.info("Executed smart NLP intent directly for local engine.")
             return intent_res
 
         # 2. General conversational queries via Ollama
@@ -308,8 +309,9 @@ async def offline_fallback_handler(ctx: ToolContext, user_message: str) -> str:
     Executes tasks, reminders, and schedules directly against SQLite when cloud AI and local LLM are offline.
     Guarantees Tracky NEVER crashes or fails to manage user requests.
     """
-    # Check deterministic intent first
-    direct_res = await execute_deterministic_intent(ctx, user_message)
+    # Check smart NLP intent first
+    from core.nlp_engine import nlp_engine
+    direct_res = await nlp_engine.process_user_intent(ctx, user_message)
     if direct_res:
         return direct_res
 

@@ -288,7 +288,54 @@ async def test_llm_engine_local_only_mode():
         assert reply is not None
         assert "Active Reminders" in reply or "pending reminders" in reply
         # Verify it did not attempt cloud models
-        assert llm_engine.last_model_used.startswith("local:") or llm_engine.last_model_used.startswith("offline:")
+        assert any(llm_engine.last_model_used.startswith(p) for p in ["local:", "offline:", "nlp:"])
     finally:
         settings.app.llm_mode = original_mode
+
+
+@pytest.mark.asyncio
+async def test_smart_nlp_engine_multi_actions():
+    from core.nlp_engine import nlp_engine
+
+    ctx = ToolContext(
+        user_id="test_nlp_user_999",
+        platform="telegram",
+        chat_id="99999",
+        timezone_name="Asia/Kolkata",
+        user_name="Ali Abbas",
+        assistant_name="Angel",
+    )
+
+    # 1. Multi-task addition
+    r1 = await nlp_engine.process_user_intent(ctx, "Create today's task list. Add tennis ball, namaz, and exam study in the tasks.")
+    assert r1 is not None
+    assert "Added 3 Tasks" in r1
+    assert "tennis ball" in r1
+    assert "namaz" in r1
+    assert "exam study" in r1
+
+    # 2. Query active tasks
+    r2 = await nlp_engine.process_user_intent(ctx, "Today's task list")
+    assert r2 is not None
+    assert "Active Tasks" in r2
+
+    # 3. Replace task list
+    r3 = await nlp_engine.process_user_intent(ctx, "Delete this and create new tasklist, add exam prep, coding and hacking in it")
+    assert r3 is not None
+    assert "Task List Updated" in r3
+    assert "exam prep" in r3
+    assert "coding" in r3
+    assert "hacking" in r3
+
+    # 4. Multi-reminder creation
+    r4 = await nlp_engine.process_user_intent(ctx, "Remind me to drink coffee after 2 minutes \n And to check project at 12:47")
+    assert r4 is not None
+    assert "Scheduled 2 Reminders" in r4 or "Reminder Scheduled" in r4
+    assert "drink coffee" in r4
+    assert "check project" in r4
+
+    # 5. Clean inactive reminders
+    r5 = await nlp_engine.process_user_intent(ctx, "Remove the inactive reminders now")
+    assert r5 is not None
+    assert "inactive reminder" in r5 or "tidy" in r5
 
