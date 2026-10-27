@@ -162,3 +162,54 @@ async def test_chat_issues_full_workflow():
     assert reply_wrong is not None
     assert "My apologies" in reply_wrong
 
+
+@pytest.mark.asyncio
+async def test_recent_chat_edge_cases():
+    ctx = ToolContext(
+        user_id="nlp_edge_user",
+        platform="telegram",
+        chat_id="8888",
+        timezone_name="Asia/Kolkata",
+        user_name="Ali Abbas",
+        assistant_name="Angel"
+    )
+
+    # 1. Clean Title: "Add reminder for 5:00 pm today to write the diary notes."
+    res1 = await nlp_engine.process_user_intent(ctx, "Add reminder for 5:00 pm today to write the diary notes.")
+    assert res1 is not None
+    assert "write the diary notes" in res1
+    assert "Add reminder" not in res1.split("• **What**:")[1].split("\n")[0]
+
+    # 2. Clean Title: "Set reminder for 1:25 today for drinking tea and eating snacks."
+    res2 = await nlp_engine.process_user_intent(ctx, "Set reminder for 1:25 today for drinking tea and eating snacks.")
+    assert res2 is not None
+    assert "drinking tea and eating snacks" in res2
+    assert "day for drinking" not in res2
+
+    # 3. Contextual Rescheduling: "I have event on 29 October. So set reminder for that." then "Change it's Timing to 6 am"
+    res3 = await nlp_engine.process_user_intent(ctx, "I have event on 29 October. So set reminder for that.")
+    assert "Oct 29" in res3
+    res_change = await nlp_engine.process_user_intent(ctx, "Change it's Timing to 6 am")
+    assert res_change is not None
+    assert "Reminder Rescheduled" in res_change
+    assert "Oct 29 at 6:00 AM" in res_change
+
+    # 4. Date-Filtered Reminders: "Show only today reminders"
+    res_today_rems = await nlp_engine.process_user_intent(ctx, "Show only today reminders")
+    assert res_today_rems is not None
+    assert "Today's Active Reminders" in res_today_rems
+    # Oct 29 event must NOT be in today's reminders!
+    assert "Oct 29" not in res_today_rems
+
+    # 5. Date-Associated Tasks: "Create tasklist for 28 october, add coding, shopping"
+    res_create_tasks = await nlp_engine.process_user_intent(ctx, "Create tasklist for 28 october, add coding, shopping")
+    assert res_create_tasks is not None
+    assert "Added 2 Tasks for Oct 28" in res_create_tasks or "Added 2 Tasks" in res_create_tasks
+
+    # "Show today's tasklist" - Oct 28 tasks must not pollute today's active tasks
+    res_today_tasks = await nlp_engine.process_user_intent(ctx, "Show today's tasklist")
+    assert res_today_tasks is not None
+    assert "coding" not in res_today_tasks
+    assert "shopping" not in res_today_tasks
+
+

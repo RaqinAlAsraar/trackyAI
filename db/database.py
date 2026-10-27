@@ -116,19 +116,19 @@ async def add_task(
 
 
 async def get_tasks(
-    user_id: str, status: Optional[str] = "pending"
+    user_id: str, status: Optional[str] = "pending", due_date: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     async with get_db() as db:
+        query = "SELECT * FROM tasks WHERE user_id = ?"
+        params = [user_id]
         if status:
-            cursor = await db.execute(
-                "SELECT * FROM tasks WHERE user_id = ? AND status = ? ORDER BY id DESC",
-                (user_id, status),
-            )
-        else:
-            cursor = await db.execute(
-                "SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC",
-                (user_id,),
-            )
+            query += " AND status = ?"
+            params.append(status)
+        if due_date:
+            query += " AND (due_date = ? OR due_date IS NULL)"
+            params.append(due_date)
+        query += " ORDER BY id DESC"
+        cursor = await db.execute(query, params)
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
@@ -189,9 +189,9 @@ async def delete_all_tasks(user_id: str, status: Optional[str] = "pending") -> i
 
 
 async def add_multiple_tasks(
-    user_id: str, platform: str, titles: List[str], priority: str = "normal"
+    user_id: str, platform: str, titles: List[str], priority: str = "normal", due_date: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """Inserts multiple tasks in a single transaction."""
+    """Inserts multiple tasks in a single transaction, optionally with due_date."""
     now_iso = datetime.now(timezone.utc).isoformat()
     created = []
     async with get_db() as db:
@@ -201,12 +201,12 @@ async def add_multiple_tasks(
                 continue
             cursor = await db.execute(
                 """
-                INSERT INTO tasks (user_id, platform, title, priority, created_at, status)
-                VALUES (?, ?, ?, ?, ?, 'pending')
+                INSERT INTO tasks (user_id, platform, title, priority, due_date, created_at, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending')
                 """,
-                (user_id, platform, clean_title, priority, now_iso),
+                (user_id, platform, clean_title, priority, due_date, now_iso),
             )
-            created.append({"id": cursor.lastrowid, "title": clean_title, "priority": priority})
+            created.append({"id": cursor.lastrowid, "title": clean_title, "priority": priority, "due_date": due_date})
         await db.commit()
     return created
 

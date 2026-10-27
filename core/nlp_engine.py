@@ -145,9 +145,9 @@ def parse_target_datetime(text: str, tz_name: str = "UTC") -> Optional[Tuple[dat
             target_date = now + timedelta(days=1)
             cleaned = re.sub(r"\btomorrow\b", "", cleaned, flags=re.IGNORECASE)
 
-    # --- 3. Check for clock times (e.g. 'at 6:00 a.m. morning', '1:10 p.m.', 'at 12:47', 'at 4 pm') ---
-    clock_pattern = r"\b(?:at|for|after)?\s*(\d{1,2}):(\d{2})(?:\s*(a\.?m\.?|p\.?m\.?|am|pm))?(?:\s*(morning|evening|night|afternoon))?\b"
-    simple_clock_pattern = r"\b(?:at|for|after)\s*(\d{1,2})(?:\s*(a\.?m\.?|p\.?m\.?|am|pm))(?:\s*(morning|evening|night|afternoon))?\b"
+    # --- 3. Check for clock times (e.g. 'at 6:00 a.m. morning', '1:10 p.m.', 'at 12:47', '6 am', 'to 6 am') ---
+    clock_pattern = r"\b(?:at|for|after|to)?\s*(\d{1,2}):(\d{2})(?:\s*(a\.?m\.?|p\.?m\.?|am|pm))?(?:\s*(morning|evening|night|afternoon))?\b"
+    simple_clock_pattern = r"\b(?:at|for|after|to)?\s*(\d{1,2})(?:\s*(a\.?m\.?|p\.?m\.?|am|pm))(?:\s*(morning|evening|night|afternoon))?\b"
 
     clock_m = re.search(clock_pattern, cleaned.lower())
     simple_m = re.search(simple_clock_pattern, cleaned.lower()) if not clock_m else None
@@ -258,13 +258,14 @@ def clean_reminder_title(raw_text: str) -> str:
         if topic and topic.lower() != "it":
             return topic.capitalize()
 
-    # Remove command prefixes
-    t = re.sub(r"^(?:please\s+)?(?:set\s+(?:a\s+)?(?:reminder|timer)(?:\s+(?:to|for))?|remind\s+(?:me)?(?:\s+(?:to|for))?)", "", t, flags=re.IGNORECASE)
+    # Command prefixes with word boundaries (support set/add/create/remind)
+    cmd_pattern = r"^(?:please\s+)?(?:(?:set|add|create)\s+(?:a\s+)?(?:reminder|timer)(?:\s+\b(?:to|for)\b)?|remind\s+(?:me)?(?:\s+\b(?:to|for)\b)?)\s*"
+    t = re.sub(cmd_pattern, "", t, flags=re.IGNORECASE)
     t = re.sub(r"\bso\s+set\s+(?:a\s+)?(?:reminder|timer)(?:\s+for\s+that\s+day)?\b", "", t, flags=re.IGNORECASE)
-    t = re.sub(r"^(?:and\s+)?(?:to\s+)?", "", t, flags=re.IGNORECASE)
     t = re.sub(r"\b(?:today|tomorrow|tonight|that day|morning|evening|night|afternoon)\b", "", t, flags=re.IGNORECASE)
     t = re.sub(r"\b(?:a\.?m\.?|p\.?m\.?)\b", "", t, flags=re.IGNORECASE)
     t = re.sub(r"\b(?:for\s+\d+\s+days?|after\s+\d+\s+days?)\b", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"^(?:and\s+)?\b(?:to|for)\b\s*", "", t.strip(), flags=re.IGNORECASE)
     t = t.strip(" ,.:;!-")
     return t or "Reminder"
 
@@ -356,19 +357,41 @@ class SmartNLPEngine:
 
         # -------------------------------------------------------------
         # 3. ACTION: Reschedule / Change Existing Reminder Time
-        # e.g. "Change time for #62 for today 1:15", "reschedule reminder 62 to 1:15 pm"
+        # Explicit ID: "Change time for #62 for today 1:15", "reschedule reminder 62 to 1:15 pm"
+        # Contextual: "Change it's Timing to 6 am", "change its time to 6 am", "change timing to 6 am"
         # -------------------------------------------------------------
         resched_m = re.search(
             r"(?:change|update|reschedule|move)(?:\s+the)?\s+(?:time\s+for\s+)?(?:reminder\s+)?#?(\d+)\s*(?:for|to|at)\s*(.+)$",
             clean_msg,
             flags=re.IGNORECASE,
         )
-        if resched_m:
-            r_id = int(resched_m.group(1))
-            time_part = resched_m.group(2)
+        contextual_resched_m = re.search(
+            r"(?:change|update|reschedule|move)\s+(?:it'?s|the)\s+(?:time|timing|schedule)\s+(?:for|to|at)\s*(.+)$",
+            clean_msg,
+            flags=re.IGNORECASE,
+        ) if not resched_m else None
+
+        if resched_m or contextual_resched_m:
+            time_part = resched_m.group(2) if resched_m else contextual_resched_m.group(1)
             parsed = parse_target_datetime(time_part, ctx.timezone_name)
             if parsed:
-                target_dt, _ = parsed
+                new_dt, _ = parsed
+                user_tz = get_user_tz(ctx.timezone_name)
+                if resched_m:
+                    r_id = int(resched_m.group(1))
+                    target_dt = new_dt
+                else:
+                    active_rems = await db.get_active_reminders(ctx.user_id)
+                    if not active_rems:
+                        return f"⚠️ You don't have any active reminders to reschedule, {user_display}."
+                    latest_r = active_rems[-1]
+                    r_id = latest_r["id"]
+                    try:
+                        orig_dt = datetime.fromisoformat(latest_r["remind_at"].replace("Z", "+00:00")).astimezone(user_tz)
+                        target_dt = orig_dt.replace(hour=new_dt.hour, minute=new_dt.minute, second=0, microsecond=0)
+                    except Exception:
+                        target_dt = new_dt
+
                 updated = await db.update_reminder_time(r_id, ctx.user_id, target_dt.isoformat())
                 if updated:
                     time_str = format_iso_to_local(target_dt.isoformat(), ctx.timezone_name)
@@ -379,7 +402,7 @@ class SmartNLPEngine:
         # 4. ACTION: Multi-ID Deletion (e.g. "Remove 53, 52", "Delete #64", "remove 62")
         # -------------------------------------------------------------
         id_delete_match = re.search(
-            r"^(?:please\s+)?(?:delete|remove|cancel|eliminate)\s+(?:the\s+)?(?:reminders?|tasks?|items?)?\s*#?(\d+(?:[\s,]+(?:and\s+)?#?\d+)*)$",
+            r"^(?:please\s+)?(?:delete|remove|cancel|eliminate)\s+(?:the\s+)?(?:reminders?|tasks?|items?)?\s*#?(\d+(?:[\s,]+(?:and\s+)?#?\d+)*)(?:\s+[a-z])?$",
             msg_lower,
         )
         if id_delete_match or (any(w in msg_lower for w in ["remove", "delete", "cancel", "eliminate"]) and re.search(r"\b\d+\b", msg_lower) and len(clean_msg.split()) <= 6):
@@ -439,35 +462,53 @@ class SmartNLPEngine:
         # -------------------------------------------------------------
         # 8. ACTION: Create Task List with Multiple Items
         # e.g. "Create today's task list. Add tennis ball, namaz, and exam study in the tasks."
+        # e.g. "Create tasklist for 28 october, add coding, shopping"
         # -------------------------------------------------------------
         is_add_or_create_tasks = any(w in msg_lower for w in ["add", "create", "make", "new", "set"]) and any(t in msg_lower for t in ["task", "tasks", "todo", "todos", "tasklist", "task list"])
         if is_add_or_create_tasks and ("add" in msg_lower or ":" in clean_msg or "," in clean_msg):
+            parsed_dt = parse_target_datetime(clean_msg, ctx.timezone_name)
+            due_date_str = None
+            date_label = ""
+            if parsed_dt and any(m in msg_lower for m in list(MONTHS_MAP.keys()) + ["tomorrow"]):
+                due_date_str = parsed_dt[0].date().isoformat()
+                date_label = f" for {parsed_dt[0].strftime('%b %d')}"
+
             match_items = re.search(r"(?:add|create|tasks?[:\s]+)(.+)$", clean_msg, re.IGNORECASE)
             if match_items:
                 raw_items = match_items.group(1)
                 items = split_items_list(raw_items)
                 if items:
-                    created = await db.add_multiple_tasks(ctx.user_id, ctx.platform, items)
-                    lines = [f"📋 **Task Created! Added {len(created)} Task{'s' if len(created) != 1 else ''} for you, {user_display}!**"]
+                    created = await db.add_multiple_tasks(ctx.user_id, ctx.platform, items, due_date=due_date_str)
+                    lines = [f"📋 **Task Created! Added {len(created)} Task{'s' if len(created) != 1 else ''}{date_label} for you, {user_display}!**"]
                     for t in created:
                         lines.append(f"• **#{t['id']}**: {t['title']}")
                     return "\n\n".join(lines)
 
         # -------------------------------------------------------------
         # 9. QUERY: List Tasks / To-Do
-        # e.g. "today's task list", "Any todo list for today?", "show active tasks"
+        # e.g. "today's task list", "Show today's tasklist", "Any todo list for today?", "show active tasks", "show again", "show tasklist"
         # -------------------------------------------------------------
         is_list_tasks = (
             any(k in msg_lower for k in ["task", "tasks", "todo", "todos", "tasklist"])
             and not any(neg in msg_lower for neg in ["add", "create", "new", "delete", "cancel", "remove", "finish", "complete", "done"])
-        ) or msg_lower in ["today's task list", "todays task list", "tasks", "my tasks", "active tasks", "show tasks", "show active tasks", "any todo list for today?"]
+        ) or msg_lower in [
+            "today's task list", "todays task list", "tasks", "my tasks", "active tasks", "show tasks", "show active tasks",
+            "any todo list for today?", "show today's tasklist", "show tasklist", "show task list", "show again"
+        ]
 
         if is_list_tasks:
-            res = await handle_list_tasks(ctx, status="pending")
-            tasks = res.get("tasks", [])
+            user_tz = get_user_tz(ctx.timezone_name)
+            now_local = datetime.now(user_tz)
+            today_str = now_local.date().isoformat()
+
+            is_today_query = any(ph in msg_lower for ph in ["today", "today's", "todays", "any todo list for today?"])
+            filter_due = today_str if is_today_query else None
+
+            tasks = await db.get_tasks(ctx.user_id, status="pending", due_date=filter_due)
             if not tasks:
                 return f"📋 You have no pending tasks right now, {user_display}! You're completely up to date! 🎉"
-            lines = [f"📋 **Your Active Tasks** ({len(tasks)}):"]
+            header = "Your Active Tasks for Today" if is_today_query else "Your Active Tasks"
+            lines = [f"📋 **{header}** ({len(tasks)}):"]
             for t in tasks:
                 prio = f" [{t['priority'].upper()}]" if t.get("priority") and t["priority"] != "normal" else ""
                 lines.append(f"• **#{t['id']}**: {t['title']}{prio}")
@@ -478,8 +519,7 @@ class SmartNLPEngine:
         # e.g. "I have exam after 15 days, set timer for it at 6:00 p.m. for 15 days."
         # e.g. "I have exam on 30 October. So set a reminder for that day at 6:00 a.m. morning."
         # -------------------------------------------------------------
-        if any(w in msg_lower for w in ["remind", "reminder", "timer"]) or ("i have" in msg_lower and any(w in msg_lower for w in ["exam", "meeting", "class", "interview"])):
-            # Check if there are multiple reminder clauses joined by newline or 'and'
+        if any(w in msg_lower for w in ["remind", "reminder", "timer"]) or ("i have" in msg_lower and any(w in msg_lower for w in ["exam", "meeting", "class", "interview", "event"])):
             clauses = re.split(r"(?:\n+|\s+and\s+(?:to\s+)?(?=check|remind|call|meet|send|email|do|work|take))", clean_msg, flags=re.IGNORECASE)
             scheduled_results = []
 
@@ -511,21 +551,58 @@ class SmartNLPEngine:
 
         # -------------------------------------------------------------
         # 11. QUERY: List Reminders / Timers
-        # e.g. "show active reminders", "reminders list", "timers", "active timers"
+        # e.g. "show active reminders", "reminders list", "timers", "active timers", "Show today's reminders"
         # -------------------------------------------------------------
         is_list_reminders = (
             any(w in msg_lower for w in ["reminder", "reminders", "timer", "timers"])
             and any(w in msg_lower for w in ["list", "show", "view", "get", "active", "pending", "my", "what", "check", "display"])
             and not any(neg in msg_lower for neg in ["delete", "remove", "cancel", "clear", "clean", "set", "add", "create"])
-        ) or msg_lower in ["reminders", "my reminders", "active reminders", "show reminders", "show active reminders", "timers", "active timers", "show timers"]
+        ) or msg_lower in [
+            "reminders", "my reminders", "active reminders", "show reminders", "show active reminders",
+            "timers", "active timers", "show timers", "show today's reminders", "show only today reminders",
+            "show updated reminders"
+        ]
 
         if is_list_reminders:
             res = await handle_list_reminders(ctx)
             reminders = res.get("reminders", [])
+
+            user_tz = get_user_tz(ctx.timezone_name)
+            now_local = datetime.now(user_tz)
+            only_today = any(ph in msg_lower for ph in ["today's", "today", "only today"])
+            only_tomorrow = "tomorrow" in msg_lower
+
+            if only_today:
+                filtered = []
+                for r in reminders:
+                    try:
+                        rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
+                        if rdt.date() == now_local.date():
+                            filtered.append(r)
+                    except Exception:
+                        pass
+                reminders = filtered
+                title_header = "Today's Active Reminders"
+            elif only_tomorrow:
+                filtered = []
+                tom_date = (now_local + timedelta(days=1)).date()
+                for r in reminders:
+                    try:
+                        rdt = datetime.fromisoformat(r.get("remind_at", "").replace("Z", "+00:00")).astimezone(user_tz)
+                        if rdt.date() == tom_date:
+                            filtered.append(r)
+                    except Exception:
+                        pass
+                reminders = filtered
+                title_header = "Tomorrow's Active Reminders"
+            else:
+                title_header = "Active Timers & Reminders" if "timer" in msg_lower else "Active Reminders"
+
             if not reminders:
                 noun = "timers or reminders" if "timer" in msg_lower else "reminders"
-                return f"🔔 You have no pending {noun} scheduled, {user_display}! Your schedule is clear."
-            title_header = "Active Timers & Reminders" if "timer" in msg_lower else "Active Reminders"
+                qual = " for today" if only_today else (" for tomorrow" if only_tomorrow else "")
+                return f"🔔 You have no pending {noun} scheduled{qual}, {user_display}! Your schedule is clear."
+
             lines = [f"🔔 **Your {title_header}** ({len(reminders)}):"]
             for r in reminders:
                 t_str = format_iso_to_local(r.get("remind_at", ""), ctx.timezone_name)
